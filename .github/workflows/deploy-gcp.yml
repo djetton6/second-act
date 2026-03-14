@@ -1,0 +1,94 @@
+name: Deploy to GCP Cloud Run (Free Tier)
+
+on:
+  push:
+    branches: [master, main]
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  SERVICE: second-act-chicago
+  REGION: us-central1
+  IMAGE: gcr.io/${{ secrets.GCP_PROJECT_ID }}/second-act-chicago
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for GCR
+        run: gcloud auth configure-docker
+
+      - name: Build Docker image
+        working-directory: second-act
+        run: |
+          docker build \
+            --build-arg NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }} \
+            -t ${{ env.IMAGE }}:${{ github.sha }} \
+            -t ${{ env.IMAGE }}:latest \
+            .
+
+      - name: Push to GCR
+        run: |
+          docker push ${{ env.IMAGE }}:${{ github.sha }}
+          docker push ${{ env.IMAGE }}:latest
+
+      - name: Deploy to Cloud Run
+        run: |
+          gcloud run deploy ${{ env.SERVICE }} \
+            --image=${{ env.IMAGE }}:${{ github.sha }} \
+            --platform=managed \
+            --region=${{ env.REGION }} \
+            --allow-unauthenticated \
+            --port=8080 \
+            --memory=512Mi \
+            --cpu=1 \
+            --min-instances=0 \
+            --max-instances=10 \
+            --set-env-vars="GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }},NEXT_PUBLIC_GOOGLE_MAPS_API_KEY=${{ secrets.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY }}"
+
+      - name: Show URL
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE }} \
+            --platform=managed --region=${{ env.REGION }} \
+            --format='value(status.url)')
+          echo "✅ Deployed to: $URL"
+
+# ─────────────────────────────────────────────────────────────────────────────
+# SETUP (one-time, ~10 minutes):
+#
+# 1. Create a GCP project at https://console.cloud.google.com
+#    (Free $300 credit for new accounts + Cloud Run always-free tier)
+#
+# 2. Enable APIs (run in Cloud Shell or terminal):
+#    gcloud services enable run.googleapis.com \
+#      cloudbuild.googleapis.com \
+#      containerregistry.googleapis.com
+#
+# 3. Create a Service Account with roles:
+#    - Cloud Run Admin
+#    - Storage Admin
+#    - Service Account User
+#    Download the JSON key.
+#
+# 4. Add these GitHub Secrets (Settings → Secrets and variables → Actions):
+#    GCP_PROJECT_ID     = your-gcp-project-id
+#    GCP_SA_KEY         = (paste entire JSON key file contents)
+#    GEMINI_API_KEY     = AIzaSyDCvZEkZ12naX5aEOA2LYz66bFJ1AAXCuI
+#    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY = AIzaSyBlR-zKnLuSmXKNLdnFOqDG0MUhdAF_xq4
+#
+# 5. Push any commit → Cloud Run deploys automatically.
+#    URL will be: https://second-act-chicago-xxxx-uc.a.run.app
+# ─────────────────────────────────────────────────────────────────────────────
