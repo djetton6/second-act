@@ -6,6 +6,7 @@ import {
   HardHat, Landmark, ExternalLink
 } from "lucide-react";
 import { ChicagoProperty } from "@/types";
+import { getStreetViewUrl } from "@/lib/streetview";
 import ReimaginedView from "./ReimaginedView";
 import BidModal from "./BidModal";
 import ConstructionQuotes from "./ConstructionQuotes";
@@ -56,18 +57,17 @@ export default function PropertyDetail({ property, onClose }: PropertyDetailProp
     <>
       <div className="fixed inset-0 z-[90] flex items-start justify-center p-4 pt-20 bg-black/60 backdrop-blur-sm overflow-y-auto">
         <div className="bg-[#0f1629] border border-[#1a3a6e]/60 rounded-2xl w-full max-w-3xl shadow-2xl shadow-black/60 mb-8">
-          {/* Header image area */}
+          {/* Header image area — real Street View photo */}
           <div className="relative h-52 bg-[#0a0e1a] rounded-t-2xl overflow-hidden">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={
-                property.propertyType === "abandoned_building"
-                  ? "https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=800&q=80"
-                  : "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800&q=80"
-              }
+              src={getStreetViewUrl(property.latitude, property.longitude, 800, 400)}
               alt={property.address}
-              className="w-full h-full object-cover opacity-60"
+              className="w-full h-full object-cover opacity-80"
             />
+            <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm rounded-md px-1.5 py-0.5">
+              <span className="text-[10px] text-zinc-300 font-medium">📷 Google Street View</span>
+            </div>
             <div className="absolute inset-0 bg-gradient-to-t from-[#0f1629] via-[#0f1629]/40 to-transparent" />
 
             {/* Close button */}
