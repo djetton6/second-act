@@ -86,8 +86,8 @@ jobs:
 # 4. Add these GitHub Secrets (Settings → Secrets and variables → Actions):
 #    GCP_PROJECT_ID     = your-gcp-project-id
 #    GCP_SA_KEY         = (paste entire JSON key file contents)
-#    GEMINI_API_KEY     = AIzaSyDCvZEkZ12naX5aEOA2LYz66bFJ1AAXCuI
-#    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY = AIzaSyBlR-zKnLuSmXKNLdnFOqDG0MUhdAF_xq4
+#    GEMINI_API_KEY     = <your-gemini-api-key>
+#    NEXT_PUBLIC_GOOGLE_MAPS_API_KEY = <your-google-maps-api-key>
 #
 # 5. Push any commit → Cloud Run deploys automatically.
 #    URL will be: https://second-act-chicago-xxxx-uc.a.run.app
