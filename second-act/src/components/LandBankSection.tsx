@@ -2,7 +2,10 @@
 import { useState } from "react";
 import { Download, MapPin, Building2, TreePine, ExternalLink, Camera } from "lucide-react";
 import { CCLBA_TOP_20, LandBankProperty } from "@/lib/landbank-data";
-import { getStreetViewUrlByAddress, getSatelliteUrlByAddress } from "@/lib/streetview";
+import { getStreetViewUrlByAddress, getSatelliteUrl } from "@/lib/streetview";
+
+const TOLEMI_URL =
+  "https://cook-county-land-bank-il-publicity.tolemi.com/#eyJzZWxlY3RlZEFzc2V0cyI6W10sIm1vZGFsS2V5IjpudWxsLCJwYXJjZWxTdHlsZSI6Im1peGVkIiwiYmFzZU1hcCI6ImRhcmstbGF5ZXIiLCJwYXJjZWxJZExhYmVscyI6dHJ1ZSwibWFwTGF0IjpudWxsLCJtYXBMbmciOm51bGwsIm1hcFpvb20iOm51bGwsImNvbHVtbnMiOlsicGlkIiwiYWRkcmVzcyIsImlkZW50aXR5X293bmVyIl0sImxpc3RTb3J0QnkiOm51bGwsImxpc3RTb3J0RGlyZWN0aW9uIjoiYXNjIiwieSI6InBjIiwieCI6bnVsbCwieiI6ImNpdHlfd2lkZSIsImZyb21EYXRlIjpudWxsLCJ0b0RhdGUiOm51bGwsInRpbWVGdW5jdGlvbiI6IiIsImF4aXNGdW5jdGlvbiI6IiIsInpBeGlzRnVuY3Rpb24iOiIiLCJzaG93VW5tYXBwZWRFdmVudHMiOmZhbHNlLCJhcHBWaWV3IjoibWFwIiwicGluc1NpZGVyQ29sbGFwc2VkIjp0cnVlLCJmaWx0ZXJzIjoie1wiaGVhdEF0dHJpYnV0ZVwiOlwiZmlsdGVyMjk3M1wifSIsInF1ZXJ5IjoiW10iLCJ2aXN1YWxpemVkTGF5ZXJzIjoiW10ifQ==";
 
 interface LandBankCardProps {
   property: LandBankProperty;
@@ -10,23 +13,23 @@ interface LandBankCardProps {
 }
 
 function LandBankCard({ property, onClick }: LandBankCardProps) {
-  const [imgFailed, setImgFailed] = useState(false);
   const [useSat, setUseSat] = useState(false);
+  const [imgFailed, setImgFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
+  // Try Street View by address first; on error fall back to lat/lng satellite (always succeeds)
   const streetViewUrl = getStreetViewUrlByAddress(property.fullAddress, 600, 400);
-  const satelliteUrl = getSatelliteUrlByAddress(property.fullAddress, 600, 400);
+  const satelliteUrl = getSatelliteUrl(property.latitude, property.longitude, 600, 400, 18);
   const imgSrc = imgFailed ? null : useSat ? satelliteUrl : streetViewUrl;
 
   function handleError() {
     if (!useSat) {
       setUseSat(true);
+      setLoaded(false);
     } else {
       setImgFailed(true);
     }
   }
-
-  const isChicago = property.city === "Chicago";
 
   return (
     <div
@@ -60,10 +63,8 @@ function LandBankCard({ property, onClick }: LandBankCardProps) {
           </div>
         )}
 
-        {/* Overlay */}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0a0e1a]/90 via-transparent to-transparent" />
 
-        {/* Top badges */}
         <div className="absolute top-2.5 left-2.5 flex flex-col gap-1">
           <span className="bg-[#CC0000]/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
             🏦 CCLB
@@ -77,7 +78,6 @@ function LandBankCard({ property, onClick }: LandBankCardProps) {
           </span>
         </div>
 
-        {/* Photo source label */}
         {loaded && !imgFailed && (
           <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5">
             <span className="text-[9px] text-zinc-300">
@@ -86,10 +86,10 @@ function LandBankCard({ property, onClick }: LandBankCardProps) {
           </div>
         )}
 
-        {/* PIN bottom right */}
-        <div className="absolute bottom-2 right-2 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5">
-          <span className="text-[9px] text-zinc-400 font-mono">
-            {property.parcelId.slice(0, 10)}…
+        {/* Reimagine hint on hover */}
+        <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+          <span className="bg-purple-900/90 border border-purple-600/50 text-white text-xs font-bold px-3 py-1.5 rounded-xl backdrop-blur-sm">
+            ✦ Reimagine Space
           </span>
         </div>
       </div>
@@ -104,7 +104,6 @@ function LandBankCard({ property, onClick }: LandBankCardProps) {
           </div>
         </div>
 
-        {/* Programs */}
         {property.programs.length > 0 && (
           <div className="flex flex-wrap gap-1 mb-3">
             {property.programs.map((p) => (
@@ -115,7 +114,6 @@ function LandBankCard({ property, onClick }: LandBankCardProps) {
           </div>
         )}
 
-        {/* Stats */}
         <div className="grid grid-cols-2 gap-2">
           <div className="bg-[#060914] rounded-xl p-2.5">
             <p className="text-zinc-600 text-[10px]">Min Bid</p>
@@ -127,10 +125,9 @@ function LandBankCard({ property, onClick }: LandBankCardProps) {
           </div>
         </div>
 
-        {/* Cook County footer */}
         <div className="mt-3 pt-3 border-t border-[#1a3a6e]/30 flex items-center justify-between">
           <span className="text-[9px] text-zinc-600">PIN: {property.parcelId}</span>
-          {isChicago && (
+          {property.city === "Chicago" && (
             <span className="text-[9px] font-bold" style={{ color: "#41B6E6" }}>Chicago Priority</span>
           )}
         </div>
@@ -139,7 +136,11 @@ function LandBankCard({ property, onClick }: LandBankCardProps) {
   );
 }
 
-export default function LandBankSection() {
+interface LandBankSectionProps {
+  onPropertyClick?: (p: LandBankProperty) => void;
+}
+
+export default function LandBankSection({ onPropertyClick }: LandBankSectionProps) {
   const [downloading, setDownloading] = useState(false);
 
   function handleDownload() {
@@ -152,7 +153,7 @@ export default function LandBankSection() {
   }
 
   return (
-    <section data-section="landbank" className="py-20 border-t border-[#1a3a6e]/20">
+    <section data-section="landbank" id="properties" className="py-20 border-t border-[#1a3a6e]/20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="flex items-start justify-between flex-wrap gap-6 mb-12">
@@ -171,11 +172,10 @@ export default function LandBankSection() {
             </h2>
             <p className="text-zinc-400 max-w-xl text-base leading-relaxed">
               Verified inventory from the Cook County Land Bank Authority.
-              Real Street View photos. Real parcel IDs. Real opportunity.
+              Click any property to view details and Reimagine the space in 3D.
             </p>
           </div>
 
-          {/* Download button */}
           <button
             onClick={handleDownload}
             disabled={downloading}
@@ -204,13 +204,13 @@ export default function LandBankSection() {
             <strong className="text-white">Cook County Land Bank Authority</strong> — publicly available inventory
           </div>
           <a
-            href="https://www.cookcountylandbank.com/properties/"
+            href={TOLEMI_URL}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1 text-xs ml-auto hover:text-white transition-colors"
             style={{ color: "#41B6E6" }}
           >
-            Official CCLBA site <ExternalLink size={11} />
+            View Live CCLBA Map <ExternalLink size={11} />
           </a>
         </div>
 
@@ -220,16 +220,15 @@ export default function LandBankSection() {
             <LandBankCard
               key={property.parcelId}
               property={property}
-              onClick={() => {}} // Could open detail modal in future
+              onClick={onPropertyClick ?? (() => {})}
             />
           ))}
         </div>
 
-        {/* Footer note */}
         <div className="mt-8 text-center">
           <p className="text-zinc-700 text-xs">
-            Photos: Google Maps Street View · Data: Cook County Land Bank Authority (Public Record) ·
-            <button onClick={handleDownload} className="underline ml-1 hover:text-zinc-400 transition-colors">
+            Photos: Google Maps Street View & Aerial · Data: Cook County Land Bank Authority (Public Record) ·{" "}
+            <button onClick={handleDownload} className="underline hover:text-zinc-400 transition-colors">
               Download full inventory ({"> 700 parcels"})
             </button>
           </p>

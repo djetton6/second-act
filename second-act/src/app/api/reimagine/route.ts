@@ -19,7 +19,6 @@ async function fetchStreetViewBase64(
     fov: "90",
     pitch: "5",
     key: apiKey,
-    source: "outdoor",
     return_error_codes: "true",
   });
 
@@ -32,44 +31,7 @@ async function fetchStreetViewBase64(
 
     const contentType = res.headers.get("content-type") ?? "image/jpeg";
     const buffer = await res.arrayBuffer();
-
-    // Google returns a tiny grey placeholder (~5KB) when no imagery exists
     if (buffer.byteLength < 8000) return null;
-
-    const base64 = Buffer.from(buffer).toString("base64");
-    return { data: base64, mimeType: contentType };
-  } catch {
-    return null;
-  }
-}
-
-async function fetchSatelliteBase64(
-  lat: number,
-  lng: number
-): Promise<{ data: string; mimeType: string } | null> {
-  const apiKey =
-    process.env.GOOGLE_MAPS_API_KEY ||
-    process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY;
-  if (!apiKey) return null;
-
-  const params = new URLSearchParams({
-    center: `${lat},${lng}`,
-    zoom: "19",
-    size: "600x400",
-    maptype: "satellite",
-    key: apiKey,
-  });
-
-  try {
-    const res = await fetch(
-      `https://maps.googleapis.com/maps/api/staticmap?${params}`,
-      { next: { revalidate: 3600 } }
-    );
-    if (!res.ok) return null;
-
-    const contentType = res.headers.get("content-type") ?? "image/png";
-    const buffer = await res.arrayBuffer();
-    if (buffer.byteLength < 5000) return null;
 
     const base64 = Buffer.from(buffer).toString("base64");
     return { data: base64, mimeType: contentType };
@@ -91,13 +53,12 @@ export async function POST(request: NextRequest) {
 
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
 
-    // ── Fetch real parcel data + Street View image in parallel ───────────────
-    const [parcelResult, footprintResult, streetViewImage, satelliteImage] =
+    // ── Fetch parcel data + Street View in parallel ──────────────────────────
+    const [parcelResult, footprintResult, streetViewResult] =
       await Promise.allSettled([
         address && zip ? lookupParcel(address, zip) : Promise.resolve(null),
         latitude && longitude ? lookupBuildingFootprint(latitude, longitude) : Promise.resolve(null),
         latitude && longitude ? fetchStreetViewBase64(latitude, longitude) : Promise.resolve(null),
-        latitude && longitude ? fetchSatelliteBase64(latitude, longitude) : Promise.resolve(null),
       ]);
 
     const parcel: ParcelData | null =
@@ -105,9 +66,7 @@ export async function POST(request: NextRequest) {
     const footprint =
       footprintResult.status === "fulfilled" ? footprintResult.value : null;
     const streetView =
-      streetViewImage.status === "fulfilled" ? streetViewImage.value : null;
-    const satellite =
-      satelliteImage.status === "fulfilled" ? satelliteImage.value : null;
+      streetViewResult.status === "fulfilled" ? streetViewResult.value : null;
 
     const realData = buildRealDataContext(parcel, footprint);
     const hasStreetView = !!streetView;
@@ -126,27 +85,18 @@ export async function POST(request: NextRequest) {
 
     const ai = new GoogleGenAI({ apiKey });
 
-    // ── Step 1: Vision analysis of actual Street View photo ─────────────────
-    // If we have the real photo, use Gemini vision to describe current condition
+    // ── Step 1: Vision analysis of Street View photo (if available) ──────────
     let description: string;
 
     if (streetView) {
-      // Pass the real Google Maps Street View photo to Gemini for analysis + vision statement
       const visionResponse = await ai.models.generateContent({
         model: "gemini-1.5-flash",
         contents: [
           {
             role: "user",
             parts: [
-              {
-                inlineData: {
-                  mimeType: streetView.mimeType,
-                  data: streetView.data,
-                },
-              },
-              {
-                text: buildVisionTextPrompt(address, neighborhood, propertyType, proposalType, style, realData),
-              },
+              { inlineData: { mimeType: streetView.mimeType, data: streetView.data } },
+              { text: buildVisionTextPrompt(address, neighborhood, propertyType, proposalType, style, realData) },
             ],
           },
         ],
@@ -155,7 +105,6 @@ export async function POST(request: NextRequest) {
         visionResponse.text ??
         generateMockDescription(address, neighborhood, propertyType, proposalType, style, realData);
     } else {
-      // Fallback: text-only description
       const textResponse = await ai.models.generateContent({
         model: "gemini-1.5-flash",
         contents: buildTextPrompt(address, neighborhood, propertyType, proposalType, style, realData),
@@ -165,48 +114,24 @@ export async function POST(request: NextRequest) {
         generateMockDescription(address, neighborhood, propertyType, proposalType, style, realData);
     }
 
-    // ── Step 2: Image generation — use Street View as reference if available ─
+    // ── Step 2: 3D SketchUp-style image generation ───────────────────────────
+    // Text-only prompt for consistent SketchUp architectural renders
     let imageBase64: string | null = null;
     let mimeType = "image/png";
 
+    const sketchPrompt = buildSketchUpPrompt(
+      address, neighborhood, propertyType, proposalType, style, realData, viewMode,
+      hasStreetView ? description : undefined
+    );
+
+    // Try Gemini 2.0 Flash image generation
     try {
-      // Build the image generation prompt parts
-      // If we have a Street View photo, pass it as the "before" reference image
-      const imageParts: Array<{ text: string } | { inlineData: { mimeType: string; data: string } }> = [];
-
-      if (streetView && viewMode === "exterior") {
-        // Pass the actual street view photo as context for Gemini to transform
-        imageParts.push({
-          inlineData: {
-            mimeType: streetView.mimeType,
-            data: streetView.data,
-          },
-        });
-        // Also pass satellite for lot context if available
-        if (satellite) {
-          imageParts.push({
-            inlineData: {
-              mimeType: satellite.mimeType,
-              data: satellite.data,
-            },
-          });
-        }
-        imageParts.push({
-          text: buildImg2ImgPrompt(address, neighborhood, propertyType, proposalType, style, realData),
-        });
-      } else {
-        // Floor plan and interior: text-only prompt (no photo reference needed)
-        imageParts.push({
-          text: buildSketchUpPrompt(address, neighborhood, propertyType, proposalType, style, realData, viewMode),
-        });
-      }
-
       const imageResponse = await ai.models.generateContent({
         model: "gemini-2.0-flash-preview-image-generation",
-        contents: [{ role: "user", parts: imageParts }],
+        contents: [{ role: "user", parts: [{ text: sketchPrompt }] }],
         config: {
           responseModalities: [Modality.IMAGE, Modality.TEXT],
-          temperature: 0.85,
+          temperature: 0.8,
         },
       });
 
@@ -220,8 +145,32 @@ export async function POST(request: NextRequest) {
         }
         if (imageBase64) break;
       }
-    } catch (imgErr) {
-      console.warn("Image generation failed:", imgErr);
+    } catch (geminiErr) {
+      console.warn("Gemini 2.0 image generation failed, trying Imagen:", geminiErr);
+    }
+
+    // Fallback: Imagen 3
+    if (!imageBase64) {
+      try {
+        const imagenResponse = await ai.models.generateImages({
+          model: "imagen-3.0-generate-002",
+          prompt: sketchPrompt,
+          config: {
+            numberOfImages: 1,
+            aspectRatio: "16:9",
+            outputMimeType: "image/jpeg",
+          },
+        });
+        const imgBytes = imagenResponse.generatedImages?.[0]?.image?.imageBytes;
+        if (imgBytes) {
+          imageBase64 = typeof imgBytes === "string"
+            ? imgBytes
+            : Buffer.from(imgBytes as Uint8Array).toString("base64");
+          mimeType = "image/jpeg";
+        }
+      } catch (imagenErr) {
+        console.warn("Imagen generation also failed:", imagenErr);
+      }
     }
 
     return NextResponse.json({
@@ -313,54 +262,7 @@ Sign off: "— NanoBanana Architecture × Second Act Chicago"
 Under 300 words. Make it feel like a premium architect's project summary.`;
 }
 
-// ── Img2Img prompt — references the actual Street View photo ─────────────────
-
-function buildImg2ImgPrompt(
-  address: string,
-  neighborhood: string,
-  propertyType: string,
-  proposalType: string,
-  style: string | undefined,
-  data: RealDataContext
-): string {
-  const isNew = proposalType === "new_construction";
-
-  const styleDetails: Record<string, string> = {
-    "Modern": "flat roof, floor-to-ceiling windows, dark steel and glass panels, minimalist facade with clean geometric lines",
-    "Greystone": "authentic Chicago limestone greystone facade, ornate carved cornice, bay windows, classic Chicago two-flat profile",
-    "Prairie": "low-pitched hipped roof, wide overhanging eaves, horizontal banding, natural earth tones, Frank Lloyd Wright Prairie vocabulary",
-    "Industrial": "exposed Chicago brick, large industrial steel-frame windows, raw concrete accents, reclaimed wood trim elements",
-    "Craftsman": "welcoming covered front porch with thick square columns, exposed rafter tails, shingle siding, warm wood details",
-  };
-  const styleDesc = styleDetails[style ?? "Modern"] ?? styleDetails["Modern"];
-
-  const storiesLabel = data.stories ? `${data.stories}-story` : (isNew ? "3-story" : "2-story");
-  const sqftLabel = data.sqft ? ` (${data.sqft.toLocaleString()} sq ft)` : "";
-  const bedsLabel = data.bedrooms ? `, ${data.bedrooms} bedrooms` : "";
-
-  const action = isNew
-    ? "completely replaced with brand-new construction"
-    : "fully renovated and restored to its original glory";
-
-  return `These are the actual current Google Maps Street View and aerial satellite photos of a ${propertyType === "vacant_lot" ? "vacant lot" : "distressed abandoned building"} at ${address} in the ${neighborhood} neighborhood of Chicago, Illinois.
-
-Transform this specific property — keeping the exact same street, surrounding buildings, sidewalk, trees, and block context visible in the photo — into a ${storiesLabel}${sqftLabel}${bedsLabel} ${style ?? "Modern"} style Chicago residential building that has been ${action}.
-
-Architectural style: ${styleDesc}.
-
-Key requirements:
-- PRESERVE the surrounding street, neighboring buildings, sidewalk curb, and sky from the original photo
-- REPLACE only the subject property with the new/renovated building
-- The new building should fit naturally into the Chicago streetscape
-- Show a realistic "after renovation" photograph-quality exterior view from the street
-- Include native landscaping strip, front entry steps, mailbox
-- Warm afternoon Chicago sunlight
-- Photo-realistic quality — this should look like a real before/after property photo
-
-Small watermark badge in the bottom-right corner reading "NanoBanana × Second Act" in white text on a dark semi-transparent pill.`;
-}
-
-// ── SketchUp 3D prompt (floor plan / interior — no photo reference) ────────────
+// ── SketchUp 3D render prompt — used for ALL view modes ──────────────────────
 
 function buildSketchUpPrompt(
   address: string,
@@ -369,33 +271,92 @@ function buildSketchUpPrompt(
   proposalType: string,
   style: string | undefined,
   data: RealDataContext,
-  viewMode: string
+  viewMode: string,
+  visionDescription?: string
 ): string {
   const isNew = proposalType === "new_construction";
+  const selectedStyle = style ?? "Modern";
 
-  const styleDetails: Record<string, string> = {
-    "Modern": "flat roof, floor-to-ceiling windows, dark steel panels, minimalist facade",
-    "Greystone": "limestone greystone facade, ornate carved cornice, bay windows, Chicago two-flat profile",
-    "Prairie": "low-pitched hipped roof, wide overhanging eaves, horizontal banding, natural earth tones, Frank Lloyd Wright Prairie vocabulary",
-    "Industrial": "exposed brick, large industrial steel-frame windows, raw concrete accents, reclaimed wood trim",
-    "Craftsman": "covered front porch with thick square columns, exposed rafter tails, shingle siding, warm wood details",
+  const styleDetails: Record<string, { materials: string; colors: string; features: string }> = {
+    "Modern": {
+      materials: "flat roof, floor-to-ceiling windows, dark steel and glass panels, white stucco panels",
+      colors: "charcoal grey, white, glass-blue reflections, black steel accents",
+      features: "rooftop deck, recessed entry, horizontal wood slat fence",
+    },
+    "Greystone": {
+      materials: "authentic Chicago limestone facade, ornate carved stone cornice, bay windows, classic Chicago two-flat profile",
+      colors: "warm grey limestone, white trim, dark window frames",
+      features: "front stoop with stone balustrades, arched entry, decorative keystones",
+    },
+    "Prairie": {
+      materials: "low-pitched hipped roof with wide overhanging eaves, horizontal banding, natural earth tones, Frank Lloyd Wright Prairie vocabulary",
+      colors: "warm ochre, brown, natural tan, deep green accents",
+      features: "ribbon windows, brick chimney, low garden walls extending from building",
+    },
+    "Industrial": {
+      materials: "exposed Chicago common brick, large industrial steel-frame casement windows, raw concrete sill details, reclaimed wood accents",
+      colors: "deep red brick, black steel frames, weathered grey concrete",
+      features: "roll-up garage-style entry, exposed structural steel beam, corrugated metal awning",
+    },
+    "Craftsman": {
+      materials: "welcoming covered front porch with thick square craftsman columns, exposed rafter tails, cedar shingle siding, warm wood details",
+      colors: "warm brown, cream, forest green, natural wood tones",
+      features: "wide front porch, craftsman entry door, window flower boxes, stone porch piers",
+    },
   };
-  const styleDesc = styleDetails[style ?? "Modern"] ?? styleDetails["Modern"];
+
+  const sd = styleDetails[selectedStyle] ?? styleDetails["Modern"];
   const storiesLabel = data.stories ? `${data.stories}-story` : (isNew ? "3-story" : "2-story");
   const sqftLabel = data.sqft ? `, approx ${data.sqft.toLocaleString()} sq ft` : "";
   const bedsLabel = data.bedrooms ? `, ${data.bedrooms} bedrooms` : "";
-  const brandingNote = `Small watermark badge in bottom-right corner: "NanoBanana × Second Act" in white text on dark semi-transparent pill.`;
+
+  const contextNote = visionDescription
+    ? `\n\nProperty context from Street View analysis: ${visionDescription.split("\n").slice(0, 2).join(" ")}`
+    : "";
+
+  const brandingBadge = `Include a small badge in the bottom-right corner reading "NanoBanana × Second Act" in white text on a dark semi-transparent rounded pill.`;
 
   if (viewMode === "floorplan") {
-    return `Professional architectural floor plan drawing for a ${storiesLabel} ${style ?? "Modern"} Chicago home in ${neighborhood}. Clean white background with thin black linework. Shows: room layout with labels (Living Room, Kitchen, Dining, ${data.bedrooms ?? 3} Bedrooms, ${Math.ceil((data.bedrooms ?? 3) / 2)} Baths${data.basement ? ", Basement" : ""}), doorways with swing arcs, window placements, staircase. Dimensions noted. North arrow in corner. Scale bar at bottom. Architectural blueprint aesthetic — precise, minimal, professional. ${brandingNote}`;
+    return `Create a professional architectural floor plan drawing for a ${storiesLabel} ${selectedStyle} Chicago residential building in ${neighborhood}${sqftLabel}${bedsLabel}. ${isNew ? "New construction" : "Renovation/rehabilitation"}.
+
+Rendering style: Clean white background with thin black linework. Architectural blueprint aesthetic — precise and minimal, like a real permit-set drawing.
+Layout includes: Room outlines with labels — Living Room, Open Kitchen, Dining, ${data.bedrooms ?? 3} Bedrooms, ${Math.ceil((data.bedrooms ?? 3) / 2)} Baths${data.basement ? ", Basement" : ""}, Utility/Laundry, front entry vestibule.
+Annotations: Doorway swing arcs, window placements, staircase (if multi-story), closets, room dimension labels.
+Details: North arrow in corner, scale bar at bottom-left.
+
+${brandingBadge}`;
   }
 
   if (viewMode === "interior") {
-    return `SketchUp-style 3D interior rendering of a ${style ?? "Modern"} ${storiesLabel} Chicago home in ${neighborhood}${sqftLabel}. ${isNew ? "Brand new construction" : "Fully restored renovation"}. View from the main living area looking toward the open kitchen. Key features: ${styleDesc}. Clean, airy spaces with 9-foot ceilings. Warm natural light from street-facing windows. Architectural visualization style — slightly stylized, clean linework, visible structural elements. ${brandingNote}`;
+    return `Create a SketchUp Pro 3D interior architectural visualization for a ${storiesLabel} ${selectedStyle} Chicago home in ${neighborhood}${sqftLabel}. ${isNew ? "Brand new construction" : "Fully restored renovation"}.${contextNote}
+
+Camera: Standing in the main living area looking toward the open kitchen and dining zone. Wide-angle perspective showing depth.
+Materials: ${sd.materials}
+Colors: ${sd.colors}
+Key features: 9-foot ceilings, natural light from street-facing windows, open floor plan, ${sd.features}, hardwood floors, exposed structural details.
+
+Rendering style: SketchUp Pro architectural 3D visualization — clean geometric forms, semi-stylized materials (slightly simplified, not hyper-realistic), bright environment lighting, white/neutral ceiling and walls, visible room structure. Professional architectural presentation quality.
+
+${brandingBadge}`;
   }
 
-  // Exterior fallback (no photo available)
-  return `SketchUp Pro 3D architectural model rendering of a ${storiesLabel} Chicago residential building${sqftLabel}${bedsLabel} in ${neighborhood}. ${isNew ? "Brand new construction" : "Fully restored renovation"} in ${style ?? "Modern"} style: ${styleDesc}. Three-quarter isometric perspective from street level. Clean light grey background with subtle ground shadow. Architectural visualization style — semi-stylized like SketchUp, geometric forms, clean linework. Chicago street context at edges. ${brandingNote}`;
+  // Exterior — main SketchUp render
+  return `Create a SketchUp Pro 3D architectural exterior visualization of a ${storiesLabel} ${selectedStyle} Chicago residential building.
+
+Address: ${address}, ${neighborhood}, Chicago, IL
+Building: ${isNew ? "New construction on previously vacant/abandoned site" : "Fully renovated building"}${sqftLabel}${bedsLabel}${contextNote}
+
+Architectural style details:
+- Materials: ${sd.materials}
+- Color palette: ${sd.colors}
+- Signature features: ${sd.features}
+- Landscaping: Native Chicago landscaping strip, front entry steps with iron railings, mailbox post, sidewalk, street trees in grates
+
+Camera angle: Three-quarter perspective from street level — slightly elevated viewpoint showing full front facade and one side. Chicago urban streetscape visible at edges (neighboring brick buildings, utility poles, sidewalk curb).
+
+Rendering style: SketchUp Pro 3D architectural model render — clean geometric forms with semi-stylized materials, slightly stylized (NOT photo-realistic), clean neutral sky background with warm afternoon sunlight from the southwest, soft ground shadows. Professional architectural visualization — the kind used in developer presentations and permit applications.
+
+${brandingBadge}`;
 }
 
 // ── Text-only prompt (fallback when no photo) ─────────────────────────────────
