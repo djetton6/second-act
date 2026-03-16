@@ -350,12 +350,19 @@ function HomeContent() {
 
           {/* Mega headline — Framer style */}
           <div className="mb-10">
-            <h1 className="text-6xl sm:text-7xl lg:text-[90px] font-black text-white leading-none tracking-tighter mb-6">
+            <h1
+              className="font-black text-white leading-[0.9] tracking-tight mb-7"
+              style={{
+                fontFamily: "var(--font-display)",
+                fontSize: "clamp(72px, 12vw, 140px)",
+                letterSpacing: "-0.03em",
+              }}
+            >
               Chicago&apos;s<br />
               <span style={{ color: "#41B6E6" }}>Second</span>{" "}
               <span style={{ color: "#CC0000" }}>Act</span>
             </h1>
-            <p className="text-xl text-zinc-400 max-w-lg leading-relaxed">
+            <p className="text-xl text-zinc-400 max-w-xl leading-relaxed">
               Bid on vacant lots and abandoned buildings.
               Transform neighborhoods — one property at a time.
               <span className="text-white font-semibold"> Local residents get priority.</span>

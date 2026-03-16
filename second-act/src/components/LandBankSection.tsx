@@ -152,7 +152,7 @@ export default function LandBankSection() {
   }
 
   return (
-    <section className="py-20 border-t border-[#1a3a6e]/20">
+    <section data-section="landbank" className="py-20 border-t border-[#1a3a6e]/20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <div className="flex items-start justify-between flex-wrap gap-6 mb-12">
@@ -165,7 +165,7 @@ export default function LandBankSection() {
                 Cook County Land Bank
               </span>
             </div>
-            <h2 className="text-4xl sm:text-5xl font-black text-white tracking-tighter leading-none mb-3">
+            <h2 className="text-5xl sm:text-6xl font-black text-white tracking-tighter leading-none mb-3">
               Featured Land Bank<br />
               <span style={{ color: "#41B6E6" }}>Properties</span>
             </h2>

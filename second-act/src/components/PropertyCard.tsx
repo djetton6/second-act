@@ -1,7 +1,7 @@
 "use client";
 import { MapPin, Building2, TreePine, Gavel, Star, AlertTriangle, ChevronRight, TrendingUp } from "lucide-react";
 import { ChicagoProperty } from "@/types";
-import { getStreetViewUrl, getSatelliteUrl } from "@/lib/streetview";
+import { getStreetViewUrlByAddress, getSatelliteUrlByAddress } from "@/lib/streetview";
 import { useState } from "react";
 
 interface PropertyCardProps {
@@ -40,8 +40,10 @@ export default function PropertyCard({ property, onClick, userZip }: PropertyCar
   const isLocalUser = userZip && userZip === property.zip;
   const hasBid = !!property.currentBid;
 
-  const streetViewUrl = getStreetViewUrl(property.latitude, property.longitude, 600, 400);
-  const satelliteUrl = getSatelliteUrl(property.latitude, property.longitude, 600, 400);
+  // Use the exact address string so Google geocodes to the real property location
+  const fullAddress = `${property.address}, Chicago, IL ${property.zip}`;
+  const streetViewUrl = getStreetViewUrlByAddress(fullAddress, 600, 400);
+  const satelliteUrl = getSatelliteUrlByAddress(fullAddress, 600, 400);
 
   function handleImgError() {
     if (!useSatellite) {

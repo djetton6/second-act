@@ -1,69 +1,109 @@
 "use client";
-import { Building2, MapPin, ChevronDown } from "lucide-react";
+import { Building2, MapPin } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+
+function scrollTo(id: string) {
+  document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
+}
 
 export default function Header() {
-  const [menuOpen, setMenuOpen] = useState(false);
-
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 bg-[#0a0e1a]/95 backdrop-blur-md border-b border-[#1a3a6e]/40">
+    <header className="fixed top-0 left-0 right-0 z-50 bg-[#060914]/95 backdrop-blur-md border-b border-[#1a3a6e]/40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between h-16">
+
           {/* Logo */}
           <Link href="/" className="flex items-center gap-3 group">
             <div className="relative">
-              <div className="w-9 h-9 bg-gradient-to-br from-[#003087] to-[#1a6eb5] rounded-lg flex items-center justify-center shadow-lg shadow-blue-900/30">
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center shadow-lg"
+                style={{ background: "linear-gradient(135deg, #003087 0%, #41B6E6 100%)" }}
+              >
                 <Building2 size={18} className="text-white" />
               </div>
-              <div className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-[#e4002b] rounded-full border-2 border-[#0a0e1a]" />
+              <div
+                className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#060914]"
+                style={{ background: "#CC0000" }}
+              />
             </div>
             <div>
-              <span className="text-white font-bold text-lg tracking-tight">Second Act</span>
-              <span className="block text-[#4a90d9] text-xs font-medium -mt-0.5 tracking-widest uppercase">Chicago</span>
+              <span className="text-white font-bold text-lg tracking-tight" style={{ fontFamily: "var(--font-display)" }}>
+                Second Act
+              </span>
+              <span
+                className="block text-xs font-semibold -mt-0.5 tracking-[0.2em] uppercase"
+                style={{ color: "#41B6E6" }}
+              >
+                Chicago
+              </span>
             </div>
           </Link>
 
           {/* Nav */}
-          <nav className="hidden md:flex items-center gap-8">
-            <Link href="/" className="text-sm text-zinc-300 hover:text-white transition-colors">Browse</Link>
-            <Link href="/?type=vacant_lot" className="text-sm text-zinc-300 hover:text-white transition-colors">Vacant Lots</Link>
-            <Link href="/?type=abandoned_building" className="text-sm text-zinc-300 hover:text-white transition-colors">Abandoned</Link>
-            <div className="relative group">
-              <button
-                onClick={() => setMenuOpen(!menuOpen)}
-                className="flex items-center gap-1 text-sm text-zinc-300 hover:text-white transition-colors"
-              >
-                Resources <ChevronDown size={14} />
-              </button>
-              {menuOpen && (
-                <div className="absolute top-full right-0 mt-2 w-48 bg-[#0f1629] border border-[#1a3a6e]/50 rounded-xl shadow-2xl py-2">
-                  <a href="#lenders" className="block px-4 py-2 text-sm text-zinc-300 hover:text-white hover:bg-[#1a3a6e]/30">Lenders</a>
-                  <a href="#quotes" className="block px-4 py-2 text-sm text-zinc-300 hover:text-white hover:bg-[#1a3a6e]/30">Construction Quotes</a>
-                  <a href="#taxes" className="block px-4 py-2 text-sm text-zinc-300 hover:text-white hover:bg-[#1a3a6e]/30">Property Tax Delta</a>
-                </div>
-              )}
-            </div>
+          <nav className="hidden md:flex items-center gap-1">
+            <button
+              onClick={() => scrollTo("properties")}
+              className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-2 rounded-lg hover:bg-white/5"
+            >
+              Browse
+            </button>
+            <button
+              onClick={() => scrollTo("properties")}
+              className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-2 rounded-lg hover:bg-white/5"
+            >
+              Vacant Lots
+            </button>
+            <button
+              onClick={() => scrollTo("properties")}
+              className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-2 rounded-lg hover:bg-white/5"
+            >
+              Abandoned
+            </button>
+            <button
+              onClick={() => scrollTo("how-it-works")}
+              className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-2 rounded-lg hover:bg-white/5"
+            >
+              How It Works
+            </button>
+            <button
+              onClick={() => {
+                // Find the CCLB section and scroll to it
+                const el = document.querySelector("[data-section='landbank']");
+                el?.scrollIntoView({ behavior: "smooth" });
+              }}
+              className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-2 rounded-lg hover:bg-white/5"
+            >
+              Land Bank
+            </button>
           </nav>
 
-          {/* CTA */}
+          {/* Right side */}
           <div className="flex items-center gap-3">
-            <div className="hidden sm:flex items-center gap-1.5 bg-[#1a3a6e]/30 border border-[#1a3a6e]/50 text-[#4a90d9] text-xs px-3 py-1.5 rounded-full">
+            <div
+              className="hidden sm:flex items-center gap-1.5 border text-xs px-3 py-1.5 rounded-full"
+              style={{
+                background: "rgba(65,182,230,0.08)",
+                borderColor: "rgba(65,182,230,0.2)",
+                color: "#41B6E6",
+              }}
+            >
               <MapPin size={11} />
-              <span>Chicago, IL</span>
+              <span>Cook County, IL</span>
             </div>
-            <Link
-              href="/?modal=bid"
-              className="bg-gradient-to-r from-[#003087] to-[#1a6eb5] hover:from-[#003087]/90 hover:to-[#1a6eb5]/90 text-white text-sm font-semibold px-4 py-2 rounded-full transition-all shadow-lg shadow-blue-900/30"
+            <button
+              onClick={() => scrollTo("properties")}
+              className="text-white text-sm font-semibold px-4 py-2 rounded-full transition-all"
+              style={{ background: "linear-gradient(90deg, #003087 0%, #41B6E6 100%)" }}
             >
               Place a Bid
-            </Link>
+            </button>
           </div>
+
         </div>
       </div>
 
-      {/* Chicago flag accent bar */}
-      <div className="h-0.5 bg-gradient-to-r from-[#003087] via-[#e4002b] via-50% to-[#003087]" />
+      {/* Chicago flag accent stripe */}
+      <div className="h-[2px]" style={{ background: "linear-gradient(90deg, #003087 0%, #41B6E6 35%, #CC0000 50%, #41B6E6 65%, #003087 100%)" }} />
     </header>
   );
 }
