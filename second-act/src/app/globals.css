@@ -1,8 +1,10 @@
 @import "tailwindcss";
 
 :root {
-  --background: #0a0e1a;
+  --background: #060914;
   --foreground: #ffffff;
+  --chicago-blue: #41B6E6;
+  --chicago-red: #CC0000;
   --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
@@ -35,7 +37,7 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #0a0e1a;
+  background: #060914;
 }
 
 ::-webkit-scrollbar-thumb {
@@ -44,7 +46,46 @@ body {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #1a6eb5;
+  background: #41B6E6;
+}
+
+/* ── Tax Impact Slider ─────────────────────────────────────── */
+input[type="range"].tax-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"].tax-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #41B6E6;
+  cursor: pointer;
+  border: 4px solid #060914;
+  box-shadow: 0 0 0 2px #41B6E6, 0 4px 12px rgba(65, 182, 230, 0.4);
+  transition: box-shadow 0.2s, transform 0.15s;
+}
+
+input[type="range"].tax-slider::-webkit-slider-thumb:hover {
+  box-shadow: 0 0 0 6px rgba(65, 182, 230, 0.25), 0 4px 16px rgba(65, 182, 230, 0.5);
+  transform: scale(1.1);
+}
+
+input[type="range"].tax-slider::-moz-range-thumb {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #41B6E6;
+  cursor: pointer;
+  border: 4px solid #060914;
+  box-shadow: 0 0 0 2px #41B6E6;
 }
 
 /* Google Maps info window override */
@@ -70,6 +111,6 @@ body {
 
 /* Selection color */
 ::selection {
-  background: rgba(0, 48, 135, 0.4);
+  background: rgba(65, 182, 230, 0.3);
   color: white;
 }
