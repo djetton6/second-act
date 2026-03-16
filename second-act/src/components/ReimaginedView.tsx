@@ -1,64 +1,68 @@
 "use client";
 import { useState } from "react";
-import { Sparkles, Loader2, ChevronDown, Eye, ImageIcon } from "lucide-react";
+import {
+  Sparkles, Loader2, ChevronDown, Wand2, RotateCcw,
+  Download, Box, Map, Sofa, Info, ChevronRight,
+} from "lucide-react";
 import { ChicagoProperty } from "@/types";
+import { getStreetViewUrl, getSatelliteUrl } from "@/lib/streetview";
 
 interface ReimaginedViewProps {
   property: ChicagoProperty;
 }
 
-const BEFORE_IMAGES: Record<string, string[]> = {
-  abandoned_building: [
-    "https://images.unsplash.com/photo-1464146072230-91cabc968266?w=800&q=80",
-    "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80",
-    "https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=800&q=80",
-  ],
-  vacant_lot: [
-    "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=800&q=80",
-    "https://images.unsplash.com/photo-1484154218962-a197022b5858?w=800&q=80",
-    "https://images.unsplash.com/photo-1416331108676-a22ccb276e35?w=800&q=80",
-  ],
-};
+const STYLES = [
+  { value: "Modern", emoji: "◼", desc: "Flat roof, glass, dark steel" },
+  { value: "Greystone", emoji: "🪨", desc: "Limestone, ornate cornice" },
+  { value: "Prairie", emoji: "🌾", desc: "Wright-inspired, wide eaves" },
+  { value: "Industrial", emoji: "⚙️", desc: "Exposed brick, steel frame" },
+  { value: "Craftsman", emoji: "🪵", desc: "Porch, wood details" },
+];
 
-const AFTER_IMAGES: Record<string, string[]> = {
-  new_construction: [
-    "https://images.unsplash.com/photo-1600596542815-ffad4c1539a9?w=800&q=80",
-    "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?w=800&q=80",
-    "https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=800&q=80",
-    "https://images.unsplash.com/photo-1576941089067-2de3c901e126?w=800&q=80",
-  ],
-  renovation: [
-    "https://images.unsplash.com/photo-1580587771525-78b9dba3b914?w=800&q=80",
-    "https://images.unsplash.com/photo-1568605114967-8130f3a36994?w=800&q=80",
-    "https://images.unsplash.com/photo-1555636222-cae831e670b3?w=800&q=80",
-    "https://images.unsplash.com/photo-1598228723793-52759bba239c?w=800&q=80",
-  ],
-};
+const VIEW_MODES = [
+  { id: "exterior", label: "3D Exterior", icon: <Box size={14} />, desc: "SketchUp-style 3D model" },
+  { id: "floorplan", label: "Floor Plan", icon: <Map size={14} />, desc: "Architectural blueprint" },
+  { id: "interior", label: "Interior", icon: <Sofa size={14} />, desc: "3D interior view" },
+] as const;
 
-const STYLES = ["Modern", "Greystone", "Prairie", "Industrial", "Craftsman"];
+type ViewMode = "exterior" | "floorplan" | "interior";
 
-function getImageForProperty(
-  images: string[],
-  id: string
-): string {
-  const seed = id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  return images[seed % images.length];
+interface GeneratedResult {
+  imageBase64: string | null;
+  mimeType: string;
+  description: string;
+  isDemo: boolean;
+  parcelData: {
+    yearBuilt: number | null;
+    sqft: number | null;
+    stories: number | null;
+    rooms: number | null;
+    bedrooms: number | null;
+    basement: boolean;
+    exterior: string | null;
+    buildingClass: string | null;
+    pin: string | null;
+  } | null;
 }
 
 export default function ReimaginedView({ property }: ReimaginedViewProps) {
-  const [proposalType, setProposalType] = useState<"renovation" | "new_construction">("renovation");
+  const [proposalType, setProposalType] = useState<"renovation" | "new_construction">(
+    property.propertyType === "vacant_lot" ? "new_construction" : "renovation"
+  );
   const [style, setStyle] = useState("Modern");
-  const [view, setView] = useState<"before" | "after" | "split">("split");
+  const [viewMode, setViewMode] = useState<ViewMode>("exterior");
   const [loading, setLoading] = useState(false);
-  const [description, setDescription] = useState<string | null>(null);
-  const [isDemo, setIsDemo] = useState(false);
+  const [result, setResult] = useState<GeneratedResult | null>(null);
+  const [error, setError] = useState("");
   const [showDescription, setShowDescription] = useState(false);
 
-  const beforeImg = getImageForProperty(BEFORE_IMAGES[property.propertyType], property.id);
-  const afterImg = getImageForProperty(AFTER_IMAGES[proposalType], property.id);
+  const streetViewUrl = getStreetViewUrl(property.latitude, property.longitude, 400, 260);
+  const satelliteUrl = getSatelliteUrl(property.latitude, property.longitude, 400, 260, 19);
 
-  async function handleReimagine() {
+  async function generate(mode: ViewMode = viewMode) {
     setLoading(true);
+    setError("");
+    if (mode !== viewMode) setViewMode(mode);
     try {
       const res = await fetch("/api/reimagine", {
         method: "POST",
@@ -69,196 +73,349 @@ export default function ReimaginedView({ property }: ReimaginedViewProps) {
           propertyType: property.propertyType,
           proposalType,
           style,
+          latitude: property.latitude,
+          longitude: property.longitude,
+          zip: property.zip,
+          viewMode: mode,
         }),
       });
       const data = await res.json();
-      if (data.success) {
-        setDescription(data.description);
-        setIsDemo(data.isDemo);
-        setView("after");
-        setShowDescription(true);
-      }
+      if (!data.success) throw new Error(data.error || "Generation failed");
+      setResult({
+        imageBase64: data.imageBase64,
+        mimeType: data.mimeType ?? "image/png",
+        description: data.description,
+        isDemo: data.isDemo,
+        parcelData: data.parcelData ?? null,
+      });
+      setShowDescription(false);
     } catch (e) {
-      console.error(e);
+      setError(e instanceof Error ? e.message : "Failed to generate");
     } finally {
       setLoading(false);
     }
   }
 
-  function formatDescription(text: string) {
-    return text.split("\n").map((line, i) => {
-      if (line.startsWith("**") && line.endsWith("**")) {
-        return <h4 key={i} className="text-white font-bold mt-3 mb-1">{line.replace(/\*\*/g, "")}</h4>;
-      }
-      if (line.match(/^\*\*.+\*\*/)) {
-        const formatted = line.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-        return <p key={i} className="text-zinc-300 text-sm leading-relaxed mb-1" dangerouslySetInnerHTML={{ __html: formatted }} />;
-      }
-      if (line.startsWith("*") && line.endsWith("*")) {
-        return <p key={i} className="text-zinc-400 text-xs italic mt-2">{line.replace(/\*/g, "")}</p>;
-      }
-      return line ? <p key={i} className="text-zinc-300 text-sm leading-relaxed">{line}</p> : <br key={i} />;
-    });
+  function handleDownload() {
+    if (!result?.imageBase64) return;
+    const link = document.createElement("a");
+    link.href = `data:${result.mimeType};base64,${result.imageBase64}`;
+    link.download = `NanoBanana-${viewMode}-${property.address.replace(/\s+/g, "-")}.png`;
+    link.click();
   }
 
+  const afterImageSrc = result?.imageBase64
+    ? `data:${result.mimeType};base64,${result.imageBase64}`
+    : null;
+
+  const pd = result?.parcelData;
+
+  // ── Before photos ─────────────────────────────────────────────────────────
+  const beforePanel = (
+    <div className="grid grid-cols-2 gap-1 rounded-xl overflow-hidden border border-[#1a3a6e]/40 mb-4">
+      <div className="relative">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={streetViewUrl} alt="Street View" className="w-full h-40 object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+        <div className="absolute bottom-1.5 left-1.5 bg-black/70 backdrop-blur-sm rounded px-1.5 py-0.5 text-[9px] text-zinc-300 font-medium">📷 Street View</div>
+        <div className="absolute top-1.5 left-1.5 bg-black/60 rounded px-1.5 py-0.5 text-[9px] text-white font-bold">BEFORE</div>
+      </div>
+      <div className="relative">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={satelliteUrl} alt="Aerial" className="w-full h-40 object-cover" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
+        <div className="absolute bottom-1.5 left-1.5 bg-black/70 backdrop-blur-sm rounded px-1.5 py-0.5 text-[9px] text-zinc-300 font-medium">🛰 Aerial</div>
+        {pd?.pin && (
+          <div className="absolute top-1.5 right-1.5 bg-black/70 rounded px-1.5 py-0.5 text-[9px] text-zinc-400">
+            PIN: {pd.pin}
+          </div>
+        )}
+      </div>
+      {/* Source attribution */}
+      <div className="col-span-2 bg-[#0a0e1a] px-2 py-1 flex items-center gap-1.5">
+        <span className="text-zinc-600 text-[9px]">Source data:</span>
+        {[
+          { l: "CHI", bg: "#003087", t: "City of Chicago" },
+          { l: "DPU", bg: "#1c4DA1", t: "DePaul Chaddick Institute" },
+          { l: "UChi", bg: "#800000", t: "UChicago Crown Family School" },
+        ].map((s) => (
+          <span key={s.l} title={s.t} className="rounded px-1.5 py-0.5 text-white font-bold text-[8px] leading-none" style={{ backgroundColor: s.bg }}>{s.l}</span>
+        ))}
+        {pd?.pin && (
+          <span className="ml-auto text-zinc-600 text-[9px]">Cook County PIN: {pd.pin}</span>
+        )}
+      </div>
+    </div>
+  );
+
+  // ── Parcel data strip ──────────────────────────────────────────────────────
+  const parcelStrip = pd && (pd.yearBuilt || pd.sqft || pd.bedrooms || pd.stories) ? (
+    <div className="mb-4 bg-[#0a0e1a] border border-[#1a3a6e]/30 rounded-xl p-3">
+      <div className="flex items-center gap-1.5 mb-2">
+        <Info size={11} className="text-[#4a90d9]" />
+        <span className="text-zinc-400 text-xs font-semibold">Real Parcel Data — Cook County Assessor</span>
+      </div>
+      <div className="flex flex-wrap gap-x-5 gap-y-1">
+        {pd.yearBuilt && <span className="text-xs text-zinc-300">🏗 Built <strong className="text-white">{pd.yearBuilt}</strong></span>}
+        {pd.sqft && <span className="text-xs text-zinc-300">📐 <strong className="text-white">{pd.sqft.toLocaleString()}</strong> sq ft</span>}
+        {pd.stories && <span className="text-xs text-zinc-300">🏢 <strong className="text-white">{pd.stories}</strong> stories</span>}
+        {pd.bedrooms && <span className="text-xs text-zinc-300">🛏 <strong className="text-white">{pd.bedrooms}</strong> beds</span>}
+        {pd.rooms && <span className="text-xs text-zinc-300">🚪 <strong className="text-white">{pd.rooms}</strong> rooms</span>}
+        {pd.basement && <span className="text-xs text-zinc-300">⬇ <strong className="text-white">Basement</strong></span>}
+        {pd.exterior && <span className="text-xs text-zinc-300">🧱 <strong className="text-white">{pd.exterior}</strong></span>}
+        {pd.buildingClass && <span className="text-xs text-zinc-300">📋 <strong className="text-white">{pd.buildingClass}</strong></span>}
+      </div>
+    </div>
+  ) : null;
+
+  // ── Pre-generation state ────────────────────────────────────────────────────
+  if (!result && !loading) {
+    return (
+      <div className="space-y-4">
+        {beforePanel}
+
+        {/* Controls */}
+        <div className="space-y-3">
+          {/* Proposal toggle */}
+          <div className="flex bg-[#0a0e1a] border border-[#1a3a6e]/40 rounded-xl p-1 w-fit">
+            {(["renovation", "new_construction"] as const).map((pt) => (
+              <button
+                key={pt}
+                onClick={() => setProposalType(pt)}
+                className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  proposalType === pt ? "bg-[#003087] text-white shadow" : "text-zinc-400 hover:text-white"
+                }`}
+              >
+                {pt === "renovation" ? "Renovation" : "New Build"}
+              </button>
+            ))}
+          </div>
+
+          {/* Style picker */}
+          <div className="grid grid-cols-5 gap-1.5">
+            {STYLES.map((s) => (
+              <button
+                key={s.value}
+                onClick={() => setStyle(s.value)}
+                title={s.desc}
+                className={`flex flex-col items-center gap-1 py-2.5 px-1 rounded-xl border text-xs font-semibold transition-all ${
+                  style === s.value
+                    ? "bg-purple-900/40 border-purple-600/60 text-white"
+                    : "bg-[#0a0e1a] border-[#1a3a6e]/40 text-zinc-400 hover:border-purple-700/40 hover:text-zinc-200"
+                }`}
+              >
+                <span className="text-base leading-none">{s.emoji}</span>
+                <span className="text-[10px] leading-tight text-center">{s.value}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Big REIMAGINE button */}
+        <button
+          onClick={() => generate("exterior")}
+          className="w-full group relative overflow-hidden flex flex-col items-center justify-center gap-2 bg-gradient-to-br from-purple-900 via-indigo-900 to-purple-800 hover:from-purple-800 hover:via-indigo-800 hover:to-purple-700 border border-purple-600/40 hover:border-purple-400/60 text-white font-bold py-7 rounded-2xl transition-all shadow-2xl shadow-purple-900/40"
+        >
+          {/* Shimmer */}
+          <div className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-gradient-to-r from-transparent via-white/8 to-transparent pointer-events-none" />
+
+          {/* NanoBanana logo pill */}
+          <div className="flex items-center gap-1.5 bg-white/10 border border-white/20 rounded-full px-3 py-1 mb-1">
+            <span className="text-yellow-300 text-xs font-black">NanoBanana</span>
+            <span className="text-white/50 text-xs">×</span>
+            <span className="text-blue-300 text-xs font-semibold">Gemini 2.0</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Wand2 size={24} className="text-purple-300" />
+            <span className="text-xl font-black tracking-tight">REIMAGINE</span>
+          </div>
+          <p className="text-purple-300 text-sm font-normal">
+            Generate SketchUp 3D · {style} · {proposalType === "new_construction" ? "New Build" : "Renovation"}
+          </p>
+          <div className="flex items-center gap-1 text-purple-400 text-xs mt-1">
+            <span>Powered by real Cook County parcel data</span>
+            <ChevronRight size={11} />
+          </div>
+        </button>
+
+        <p className="text-zinc-600 text-xs text-center">
+          Generates exterior 3D model, floor plan &amp; interior view — all SketchUp-style architectural renders
+        </p>
+      </div>
+    );
+  }
+
+  // ── Loading state ───────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        {beforePanel}
+        <div className="flex flex-col items-center justify-center py-16 space-y-4">
+          {/* NanoBanana loading animation */}
+          <div className="relative w-20 h-20">
+            <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-purple-600 to-indigo-600 animate-pulse" />
+            <div className="absolute inset-2 rounded-xl bg-[#0f1629] flex items-center justify-center">
+              <Loader2 size={28} className="text-purple-400 animate-spin" />
+            </div>
+          </div>
+          <div className="text-center">
+            <p className="text-white font-bold text-lg">NanoBanana is rendering…</p>
+            <p className="text-purple-400 text-sm mt-1">
+              Fetching Cook County records · Building SketchUp 3D model
+            </p>
+            <p className="text-zinc-600 text-xs mt-2">~15–25 seconds</p>
+          </div>
+          {/* Progress dots */}
+          <div className="flex gap-2">
+            {["Parcel data", "3D model", "Materials", "Render"].map((step, i) => (
+              <div key={step} className="flex flex-col items-center gap-1">
+                <div
+                  className="w-2 h-2 rounded-full bg-purple-500 animate-bounce"
+                  style={{ animationDelay: `${i * 150}ms` }}
+                />
+                <span className="text-[9px] text-zinc-600">{step}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Result state ────────────────────────────────────────────────────────────
   return (
     <div className="space-y-4">
-      {/* Controls */}
-      <div className="flex flex-wrap items-center gap-3">
-        {/* Proposal type */}
-        <div className="flex bg-[#0a0e1a] border border-[#1a3a6e]/40 rounded-xl p-1">
+      {beforePanel}
+      {parcelStrip}
+
+      {/* View mode tabs */}
+      <div className="flex gap-1 bg-[#0a0e1a] border border-[#1a3a6e]/30 rounded-xl p-1">
+        {VIEW_MODES.map((vm) => (
           <button
-            onClick={() => setProposalType("renovation")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              proposalType === "renovation" ? "bg-[#003087] text-white" : "text-zinc-400 hover:text-white"
+            key={vm.id}
+            onClick={() => generate(vm.id)}
+            disabled={loading}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-semibold transition-all ${
+              viewMode === vm.id
+                ? "bg-purple-700 text-white shadow"
+                : "text-zinc-400 hover:text-white hover:bg-white/5"
             }`}
           >
-            Renovation
+            {vm.icon}
+            <span className="hidden sm:inline">{vm.label}</span>
+            <span className="sm:hidden">{vm.label.split(" ")[0]}</span>
           </button>
-          <button
-            onClick={() => setProposalType("new_construction")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              proposalType === "new_construction" ? "bg-[#003087] text-white" : "text-zinc-400 hover:text-white"
-            }`}
-          >
-            New Build
-          </button>
-        </div>
-
-        {/* Style selector */}
-        <div className="flex items-center gap-2 bg-[#0a0e1a] border border-[#1a3a6e]/40 rounded-xl px-3 py-1.5">
-          <span className="text-xs text-zinc-500">Style:</span>
-          <select
-            value={style}
-            onChange={(e) => setStyle(e.target.value)}
-            className="bg-transparent text-white text-xs focus:outline-none cursor-pointer"
-          >
-            {STYLES.map((s) => (
-              <option key={s} value={s} className="bg-[#0f1629]">{s}</option>
-            ))}
-          </select>
-          <ChevronDown size={12} className="text-zinc-500" />
-        </div>
-
-        {/* View toggle */}
-        <div className="flex bg-[#0a0e1a] border border-[#1a3a6e]/40 rounded-xl p-1">
-          {(["before", "split", "after"] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setView(v)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all capitalize ${
-                view === v ? "bg-[#1a3a6e] text-white" : "text-zinc-400 hover:text-white"
-              }`}
-            >
-              {v}
-            </button>
-          ))}
-        </div>
-
-        {/* Reimagine button */}
-        <button
-          onClick={handleReimagine}
-          disabled={loading}
-          className="ml-auto flex items-center gap-2 bg-gradient-to-r from-purple-700 to-indigo-600 hover:from-purple-600 hover:to-indigo-500 disabled:opacity-60 text-white text-xs font-bold px-4 py-2 rounded-xl transition-all shadow-lg shadow-purple-900/30"
-        >
-          {loading ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />}
-          {loading ? "Reimagining..." : "AI Reimagine"}
-        </button>
+        ))}
       </div>
 
-      {/* Image view */}
-      <div className="rounded-2xl overflow-hidden border border-[#1a3a6e]/40">
-        {view === "split" ? (
-          <div className="grid grid-cols-2 gap-0.5 bg-[#1a3a6e]/20">
-            {/* Before */}
-            <div className="relative">
-              <div className="absolute top-3 left-3 z-10 bg-black/70 backdrop-blur-sm rounded-lg px-2 py-1">
-                <span className="text-white text-xs font-semibold flex items-center gap-1.5">
-                  <Eye size={10} /> Current State
-                </span>
-              </div>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={beforeImg} alt="Before" className="w-full h-64 object-cover" />
-            </div>
-            {/* After */}
-            <div className="relative">
-              <div className="absolute top-3 left-3 z-10 bg-purple-900/80 backdrop-blur-sm rounded-lg px-2 py-1 border border-purple-500/30">
-                <span className="text-purple-200 text-xs font-semibold flex items-center gap-1.5">
-                  <Sparkles size={10} /> AI Vision
-                </span>
-              </div>
-              {description ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={afterImg} alt="After - AI Reimagined" className="w-full h-64 object-cover" />
-              ) : (
-                <div className="w-full h-64 bg-gradient-to-br from-[#0a0e1a] to-[#0f1629] flex flex-col items-center justify-center">
-                  <Sparkles size={32} className="text-purple-500 mb-3 opacity-50" />
-                  <p className="text-zinc-500 text-sm text-center px-4">
-                    Click <strong className="text-purple-400">AI Reimagine</strong> to see the transformation
-                  </p>
-                </div>
-              )}
-            </div>
+      {/* Generated image */}
+      <div className="relative rounded-2xl overflow-hidden border border-purple-700/30 bg-[#0a0e1a]">
+        {/* Header bar */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-purple-900/30">
+          <div className="flex items-center gap-2">
+            {/* NanoBanana brand */}
+            <span className="text-yellow-300 font-black text-xs">NanoBanana</span>
+            <span className="text-white/30 text-xs">×</span>
+            <span className="text-blue-300 text-xs font-semibold">Second Act</span>
+            <span className="text-white/30 text-xs">·</span>
+            <span className="text-purple-300 text-xs">
+              {VIEW_MODES.find((v) => v.id === viewMode)?.label}
+            </span>
           </div>
-        ) : view === "before" ? (
-          <div className="relative">
-            <div className="absolute top-3 left-3 z-10 bg-black/70 backdrop-blur-sm rounded-lg px-2 py-1">
-              <span className="text-white text-xs font-semibold flex items-center gap-1.5">
-                <Eye size={10} /> Current State
-              </span>
-            </div>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={beforeImg} alt="Before" className="w-full h-80 object-cover" />
+          <div className="flex items-center gap-2">
+            {result?.isDemo && (
+              <span className="text-[9px] text-zinc-600 bg-zinc-800 rounded px-1.5 py-0.5">Demo mode</span>
+            )}
+            {afterImageSrc && (
+              <button
+                onClick={handleDownload}
+                className="flex items-center gap-1 text-xs text-purple-300 hover:text-white transition-colors bg-purple-900/30 hover:bg-purple-900/50 px-2.5 py-1 rounded-lg"
+              >
+                <Download size={11} /> Save
+              </button>
+            )}
           </div>
+        </div>
+
+        {/* Render output */}
+        {afterImageSrc ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={afterImageSrc}
+            alt={`NanoBanana ${viewMode} render`}
+            className="w-full object-contain max-h-[480px]"
+          />
         ) : (
-          <div className="relative">
-            <div className="absolute top-3 left-3 z-10 bg-purple-900/80 backdrop-blur-sm rounded-lg px-2 py-1 border border-purple-500/30">
-              <span className="text-purple-200 text-xs font-semibold flex items-center gap-1.5">
-                <Sparkles size={10} /> AI Vision — {style} {proposalType === "new_construction" ? "New Build" : "Renovation"}
-              </span>
-            </div>
-            {description ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={afterImg} alt="After" className="w-full h-80 object-cover" />
-            ) : (
-              <div className="w-full h-80 bg-gradient-to-br from-[#0a0e1a] to-[#0f1629] flex flex-col items-center justify-center">
-                <ImageIcon size={48} className="text-[#1a3a6e] mb-4" />
-                <p className="text-zinc-500 text-sm text-center px-6">Click <strong className="text-purple-400">AI Reimagine</strong> to generate a vision</p>
-              </div>
+          <div className="flex flex-col items-center justify-center py-12 px-6 text-center">
+            <Sparkles size={32} className="text-purple-400 mb-3" />
+            <p className="text-purple-200 text-sm leading-relaxed font-medium max-w-md">
+              {result?.description.replace(/\*\*/g, "").split("\n").slice(0, 3).join(" ")}
+            </p>
+            {result?.isDemo && (
+              <p className="mt-3 text-zinc-600 text-xs">Add GEMINI_API_KEY to enable image generation</p>
             )}
           </div>
         )}
       </div>
 
-      {/* NanoBanana attribution */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2 text-xs text-zinc-500">
-          <Sparkles size={11} className="text-purple-400" />
-          <span>Powered by <span className="text-purple-400 font-semibold">NanoBanana</span> × <span className="text-blue-400 font-semibold">Google Gemini</span></span>
-          {isDemo && <span className="text-zinc-600">(Demo Mode — Add GEMINI_API_KEY for full AI)</span>}
-        </div>
-        {description && (
+      {/* Quick re-render as other views */}
+      <div className="grid grid-cols-3 gap-2">
+        {VIEW_MODES.filter((v) => v.id !== viewMode).map((vm) => (
           <button
-            onClick={() => setShowDescription(!showDescription)}
-            className="text-xs text-[#4a90d9] hover:text-white transition-colors font-semibold"
+            key={vm.id}
+            onClick={() => generate(vm.id)}
+            disabled={loading}
+            className="flex flex-col items-center gap-1 py-3 rounded-xl border border-purple-900/30 hover:border-purple-600/50 bg-[#0a0e1a] hover:bg-purple-900/20 transition-all text-xs text-zinc-400 hover:text-white font-semibold"
           >
-            {showDescription ? "Hide" : "Show"} AI Description
+            {vm.icon}
+            <span>{vm.label}</span>
+            <span className="text-[9px] text-zinc-600 font-normal">{vm.desc}</span>
           </button>
-        )}
+        ))}
+        <button
+          onClick={() => { setResult(null); setError(""); }}
+          className="flex flex-col items-center gap-1 py-3 rounded-xl border border-[#1a3a6e]/30 hover:border-zinc-600/50 bg-[#0a0e1a] transition-all text-xs text-zinc-500 hover:text-zinc-200 font-semibold"
+        >
+          <RotateCcw size={14} />
+          <span>Change Style</span>
+          <span className="text-[9px] text-zinc-600 font-normal">Start over</span>
+        </button>
       </div>
 
-      {/* AI Description */}
-      {description && showDescription && (
-        <div className="bg-[#0a0e1a] border border-purple-900/30 rounded-2xl p-5">
-          <div className="flex items-center gap-2 mb-4">
-            <Sparkles size={15} className="text-purple-400" />
-            <span className="text-purple-300 font-semibold text-sm">AI Architectural Vision</span>
-          </div>
-          <div className="space-y-1">
-            {formatDescription(description)}
-          </div>
+      {/* Error */}
+      {error && (
+        <div className="bg-red-900/20 border border-red-700/30 rounded-xl px-4 py-3 text-red-400 text-sm">{error}</div>
+      )}
+
+      {/* AI description toggle */}
+      {result?.description && (
+        <div>
+          <button
+            onClick={() => setShowDescription(!showDescription)}
+            className="flex items-center gap-2 text-xs text-purple-400 hover:text-white transition-colors font-semibold"
+          >
+            <ChevronDown size={12} className={`transition-transform ${showDescription ? "rotate-180" : ""}`} />
+            {showDescription ? "Hide" : "Read"} Architectural Vision Statement
+          </button>
+          {showDescription && (
+            <div className="mt-2 bg-[#0a0e1a] border border-purple-900/30 rounded-2xl p-5 text-sm text-zinc-300 leading-relaxed space-y-2">
+              {result.description.split("\n").map((line, i) => {
+                if (!line.trim()) return null;
+                const isBold = line.startsWith("**") || line.match(/^\*\*.+\*\*$/);
+                const cleaned = line.replace(/\*\*/g, "");
+                return isBold
+                  ? <p key={i} className="text-white font-bold mt-3">{cleaned}</p>
+                  : <p key={i}>{cleaned}</p>;
+              })}
+            </div>
+          )}
         </div>
       )}
+
+      {/* Footer */}
+      <p className="text-zinc-700 text-[10px] text-center pt-1">
+        <span className="text-yellow-400/70 font-bold">NanoBanana</span> × Second Act Chicago ·
+        3D renders by Google Gemini 2.0 · Parcel data: Cook County Assessor, City of Chicago, DePaul Chaddick, UChicago
+      </p>
     </div>
   );
 }

@@ -1,122 +1,244 @@
 import { NextRequest, NextResponse } from "next/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI, Modality } from "@google/genai";
+import { lookupParcel, lookupBuildingFootprint, ParcelData } from "@/lib/cookcounty";
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { address, neighborhood, propertyType, proposalType, style } = body;
+    const {
+      address, neighborhood, propertyType, proposalType, style,
+      latitude, longitude, zip,
+      viewMode = "exterior",   // "exterior" | "floorplan" | "interior"
+    } = body;
 
     const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
 
+    // ── Fetch real parcel data from Cook County ───────────────────────────────
+    let parcel: ParcelData | null = null;
+    let footprint: { buildingClass: string | null; floors: number | null; yearBuilt: number | null } | null = null;
+
+    if (address && zip) {
+      [parcel, footprint] = await Promise.allSettled([
+        lookupParcel(address, zip),
+        latitude && longitude ? lookupBuildingFootprint(latitude, longitude) : Promise.resolve(null),
+      ]).then((results) => [
+        results[0].status === "fulfilled" ? results[0].value : null,
+        results[1].status === "fulfilled" ? results[1].value : null,
+      ]);
+    }
+
+    // Merge parcel + footprint data into a context object
+    const realData = buildRealDataContext(parcel, footprint);
+
     if (!apiKey) {
-      // Return a structured mock response when no API key is available
       return NextResponse.json({
         success: true,
-        description: generateMockDescription(address, neighborhood, propertyType, proposalType, style),
-        renderingUrl: null,
+        description: generateMockDescription(address, neighborhood, propertyType, proposalType, style, realData),
+        imageBase64: null,
+        mimeType: null,
         isDemo: true,
-        prompt: buildImagePrompt(address, neighborhood, propertyType, proposalType, style),
+        parcelData: realData,
       });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const ai = new GoogleGenAI({ apiKey });
 
-    const prompt = `You are an expert architect and urban planner specializing in Chicago neighborhood revitalization.
+    // ── Step 1: Rich architectural description via Gemini Flash ───────────────
+    const textResponse = await ai.models.generateContent({
+      model: "gemini-1.5-flash",
+      contents: buildTextPrompt(address, neighborhood, propertyType, proposalType, style, realData),
+    });
+    const description = textResponse.text ??
+      generateMockDescription(address, neighborhood, propertyType, proposalType, style, realData);
 
-    Property: ${address}, ${neighborhood}, Chicago, IL
-    Type: ${propertyType === "vacant_lot" ? "Vacant Lot" : "Abandoned Building"}
-    Proposal: ${proposalType === "new_construction" ? "New Construction" : "Renovation/Rehabilitation"}
-    Style: ${style || "Modern Chicago"}
+    // ── Step 2: 3D SketchUp-style rendering via Gemini 2.0 ───────────────────
+    let imageBase64: string | null = null;
+    let mimeType = "image/png";
 
-    Generate a detailed, inspiring description of how this property could be reimagined. Include:
-    1. Architectural style and design features
-    2. Interior highlights
-    3. Sustainable/green features
-    4. Community impact
-    5. Estimated square footage and rooms
-    6. Special Chicago architectural elements (greystone, bungalow, etc.)
+    try {
+      const imagePrompt = buildSketchUpPrompt(
+        address, neighborhood, propertyType, proposalType, style, realData, viewMode
+      );
 
-    Make it vivid, professional, and inspiring — like a high-end real estate listing combined with an architect's vision. Keep it under 300 words.`;
+      const imageResponse = await ai.models.generateContent({
+        model: "gemini-2.0-flash-preview-image-generation",
+        contents: imagePrompt,
+        config: {
+          responseModalities: [Modality.IMAGE, Modality.TEXT],
+          temperature: 0.9,
+        },
+      });
 
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+      for (const candidate of imageResponse.candidates ?? []) {
+        for (const part of candidate.content?.parts ?? []) {
+          if (part.inlineData?.data) {
+            imageBase64 = part.inlineData.data;
+            mimeType = part.inlineData.mimeType ?? "image/png";
+            break;
+          }
+        }
+        if (imageBase64) break;
+      }
+    } catch (imgErr) {
+      console.warn("Image generation failed:", imgErr);
+    }
 
     return NextResponse.json({
       success: true,
-      description: text,
-      renderingUrl: null,
+      description,
+      imageBase64,
+      mimeType,
       isDemo: false,
-      prompt: buildImagePrompt(address, neighborhood, propertyType, proposalType, style),
+      parcelData: realData,
     });
   } catch (error) {
     console.error("Reimagine API error:", error);
-    return NextResponse.json(
-      { error: "Failed to generate reimagining" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Failed to generate reimagining" }, { status: 500 });
   }
 }
 
-function buildImagePrompt(
+// ── Context builder ────────────────────────────────────────────────────────────
+
+interface RealDataContext {
+  yearBuilt: number | null;
+  sqft: number | null;
+  stories: number | null;
+  rooms: number | null;
+  bedrooms: number | null;
+  basement: boolean;
+  exterior: string | null;
+  buildingClass: string | null;
+  pin: string | null;
+}
+
+function buildRealDataContext(
+  parcel: ParcelData | null,
+  footprint: { buildingClass: string | null; floors: number | null; yearBuilt: number | null } | null
+): RealDataContext {
+  return {
+    yearBuilt: parcel?.yearBuilt ?? footprint?.yearBuilt ?? null,
+    sqft: parcel?.sqft ?? null,
+    stories: parcel?.stories ?? footprint?.floors ?? null,
+    rooms: parcel?.rooms ?? null,
+    bedrooms: parcel?.bedrooms ?? null,
+    basement: parcel?.basement ?? false,
+    exterior: parcel?.exteriorConstruction ?? null,
+    buildingClass: parcel?.buildingClass ?? footprint?.buildingClass ?? null,
+    pin: parcel?.pin ?? null,
+  };
+}
+
+// ── SketchUp 3D prompt ─────────────────────────────────────────────────────────
+
+function buildSketchUpPrompt(
   address: string,
   neighborhood: string,
   propertyType: string,
   proposalType: string,
-  style?: string
+  style: string | undefined,
+  data: RealDataContext,
+  viewMode: string
 ): string {
   const isNew = proposalType === "new_construction";
-  const styleDesc = style || "Modern Chicago contemporary";
 
-  return `${styleDesc} ${isNew ? "newly constructed" : "beautifully renovated"} ${
-    propertyType === "vacant_lot" ? "home on vacant lot" : "restored building"
-  } at ${address} in ${neighborhood}, Chicago. Golden hour photography, architectural photography, welcoming front facade, Chicago neighborhood context, photorealistic, high resolution, professional real estate photography.`;
+  const styleDetails: Record<string, string> = {
+    "Modern": "flat roof, floor-to-ceiling windows, dark steel panels, minimalist facade",
+    "Greystone": "limestone greystone facade, ornate carved cornice, bay windows, Chicago two-flat profile",
+    "Prairie": "low-pitched hipped roof, wide overhanging eaves, horizontal banding, natural earth tones, Frank Lloyd Wright Prairie vocabulary",
+    "Industrial": "exposed brick, large industrial steel-frame windows, raw concrete accents, reclaimed wood trim",
+    "Craftsman": "covered front porch with thick square columns, exposed rafter tails, shingle siding, warm wood details",
+  };
+  const styleDesc = styleDetails[style ?? "Modern"] ?? styleDetails["Modern"];
+
+  const storiesLabel = data.stories ? `${data.stories}-story` : (isNew ? "3-story" : "2-story");
+  const yearLabel = data.yearBuilt ? `, originally built ${data.yearBuilt}` : "";
+  const sqftLabel = data.sqft ? `, approx ${data.sqft.toLocaleString()} sq ft` : "";
+  const bedsLabel = data.bedrooms ? `, ${data.bedrooms} bedrooms` : "";
+
+  const baseBuilding = `${storiesLabel} Chicago residential building${yearLabel}${sqftLabel}${bedsLabel}`;
+  const action = isNew ? "brand new construction" : "fully restored renovation";
+
+  const brandingNote = `Branding watermark in corner: "NanoBanana × Second Act" in small clean sans-serif white text on dark pill badge.`;
+
+  if (viewMode === "floorplan") {
+    return `Professional architectural floor plan drawing for a ${storiesLabel} ${style ?? "Modern"} Chicago home in ${neighborhood}. Clean white background with thin black linework. Shows: room layout with labels (Living Room, Kitchen, Dining, ${data.bedrooms ?? 3} Bedrooms, ${Math.ceil((data.bedrooms ?? 3) / 2)} Baths${data.basement ? ", Basement" : ""}), doorways with swing arcs, window placements, staircase. Dimensions noted. North arrow in corner. Scale bar at bottom. Architectural blueprint aesthetic — precise, minimal, professional. ${brandingNote}`;
+  }
+
+  if (viewMode === "interior") {
+    return `SketchUp-style 3D interior rendering of a ${style ?? "Modern"} ${storiesLabel} Chicago home in ${neighborhood}${sqftLabel}. ${action}. View from the main living area looking toward the open kitchen. Key features: ${styleDesc}. Clean, airy spaces with 9-foot ceilings. Warm natural light from street-facing windows. Architectural visualization style — slightly stylized, clean linework, visible structural elements, not overly photorealistic. Soft ambient lighting with accent warm tones. ${brandingNote}`;
+  }
+
+  // Default: exterior 3D SketchUp view
+  return `SketchUp Pro 3D architectural model rendering of a ${baseBuilding} in ${neighborhood}, Chicago. This is a ${action} in ${style ?? "Modern"} style: ${styleDesc}. Three-quarter isometric perspective view from street level, showing: full exterior facade, roof structure, window and door openings, front entry steps, landscape strip with native plants. Clean light grey background with subtle ground shadow. Architectural visualization style — semi-stylized like SketchUp, visible geometric forms, clean precise linework, NOT overly photorealistic. Material callout labels with arrows: facade material, roof type, window style. Chicago street context visible at edges. Studio-quality presentation render. ${brandingNote}`;
 }
+
+// ── Text description prompt ────────────────────────────────────────────────────
+
+function buildTextPrompt(
+  address: string,
+  neighborhood: string,
+  propertyType: string,
+  proposalType: string,
+  style: string | undefined,
+  data: RealDataContext
+): string {
+  const isNew = proposalType === "new_construction";
+  const realFacts = [
+    data.yearBuilt ? `Originally built in ${data.yearBuilt}.` : "",
+    data.sqft ? `${data.sqft.toLocaleString()} sq ft building footprint.` : "",
+    data.stories ? `${data.stories} stories.` : "",
+    data.bedrooms ? `${data.bedrooms} bedrooms.` : "",
+    data.rooms ? `${data.rooms} total rooms.` : "",
+    data.basement ? "Has basement." : "",
+    data.exterior ? `Exterior: ${data.exterior}.` : "",
+    data.buildingClass ? `Building class: ${data.buildingClass}.` : "",
+    data.pin ? `Cook County PIN: ${data.pin}.` : "",
+  ].filter(Boolean).join(" ");
+
+  return `You are a senior architect at NanoBanana, a Chicago-based firm specializing in neighborhood revitalization.
+
+Property: ${address}, ${neighborhood}, Chicago, IL
+Type: ${propertyType === "vacant_lot" ? "Vacant Lot" : "Abandoned Building"}
+Proposal: ${isNew ? "New Construction" : "Renovation/Rehabilitation"}
+Architectural Style: ${style ?? "Modern"}
+${realFacts ? `\nReal Parcel Data from Cook County:\n${realFacts}` : ""}
+
+Write a compelling architectural vision statement for this property. Include:
+1. Key design moves that honor the neighborhood's character (reference Chicago's greystone, bungalow, or two-flat traditions)
+2. Specific interior highlights using the real room/sqft data above if available
+3. 2-3 sustainability features
+4. Community impact on ${neighborhood}
+5. Estimated project cost range
+
+Sign off with: "— NanoBanana Architecture × Second Act Chicago"
+Under 280 words. Make it feel like a premium architect's project summary.`;
+}
+
+// ── Mock description ────────────────────────────────────────────────────────────
 
 function generateMockDescription(
   address: string,
   neighborhood: string,
   propertyType: string,
   proposalType: string,
-  style?: string
+  style: string | undefined,
+  data: RealDataContext
 ): string {
   const isNew = proposalType === "new_construction";
-  const styles: Record<string, string> = {
-    "Modern": "sleek contemporary",
-    "Greystone": "classic Chicago greystone",
-    "Prairie": "Frank Lloyd Wright-inspired Prairie",
-    "Industrial": "industrial-chic converted",
-    "Craftsman": "warm craftsman bungalow",
-  };
-  const styleDesc = styles[style || "Modern"] || "modern";
+  const sqftNote = data.sqft ? ` (${data.sqft.toLocaleString()} sq ft` + (data.stories ? `, ${data.stories}-story)` : ")") : "";
 
-  if (isNew) {
-    return `**Reimagined Vision: ${address}, ${neighborhood}**
+  return `**${isNew ? "New Construction" : "Restored"} Vision: ${address}, ${neighborhood}**
 
-This ${styleDesc} new construction rises from what was once a vacant lot to become a cornerstone of ${neighborhood}'s renaissance. Standing three stories tall, the home features a striking facade of locally-sourced brick and floor-to-ceiling windows that flood the interior with Chicago's legendary golden light.
+This ${style ?? "Modern"} ${isNew ? "new build" : "rehabilitation"}${sqftNote} rises from neglect to become a cornerstone of ${neighborhood}'s renaissance.${data.yearBuilt ? ` Honoring the original ${data.yearBuilt} construction,` : ""} the ${isNew ? "design" : "restoration"} blends Chicago's rich architectural heritage with 21st-century living.
 
 **Design Highlights:**
-The open-concept ground floor flows seamlessly from a chef's kitchen — outfitted with quartz countertops and professional appliances — to a living area with soaring 10-foot ceilings. Original architectural details honor Chicago's rich building heritage while smart-home integration powers every modern convenience.
+${data.bedrooms ? `${data.bedrooms} bedrooms, ` : ""}open-concept kitchen-dining, soaring 9-foot ceilings, and abundant natural light${data.basement ? " with a fully finished basement flex space" : ""}.
 
 **Sustainability:**
-Solar panels on the green roof generate 80% of the home's energy needs. A rainwater harvesting system feeds the drought-resistant native garden, earning LEED Silver certification and reducing utility costs by 45%.
+Solar-ready roof, triple-pane windows, rainwater harvesting for native landscape — LEED Silver target.
 
 **Community Impact:**
-This home brings 2,400 sq ft of quality housing back to ${neighborhood}, contributing to the neighborhood's $2.1M tax base while providing an anchor for continued revitalization. A dedicated community garden plot along the south facade creates green space for neighbors.
+Quality housing added to ${neighborhood}, anchoring continued block-by-block revitalization.
 
-*"Architecture is the will of an epoch translated into space." — Mies van der Rohe, Chicago's own.*`;
-  } else {
-    return `**Restored Vision: ${address}, ${neighborhood}**
-
-This ${styleDesc} rehabilitation breathes new life into one of ${neighborhood}'s most storied structures. The exterior's original masonry has been meticulously restored — every cornice, lintel, and bay window returned to its 1920s glory — while the interior has been completely reimagined for 21st-century living.
-
-**Architectural Preservation:**
-The building's original pressed-tin ceilings, now polished to a warm luster, crown living spaces where exposed brick meets modern minimalism. Three bedrooms, two full baths, and an open kitchen-dining area create 1,850 sq ft of thoughtful living space. The original staircase — salvaged and refinished with reclaimed white oak treads — anchors the home's historic soul.
-
-**Modern Updates:**
-New electrical, plumbing, and HVAC systems meet today's highest standards. Triple-pane windows maintain the facade's historic proportions while slashing energy bills. A finished basement adds 600 sq ft of flexible space.
-
-**Neighborhood Fabric:**
-This restoration preserves the block's historic streetscape while delivering a move-in-ready home that ${neighborhood} can be proud of. Estimated renovation cost payback: 7 years.`;
-  }
+— NanoBanana Architecture × Second Act Chicago`;
 }

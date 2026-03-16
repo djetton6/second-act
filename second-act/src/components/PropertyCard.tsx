@@ -1,6 +1,7 @@
 "use client";
 import { MapPin, Building2, TreePine, Gavel, Star, AlertTriangle, ChevronRight, TrendingUp } from "lucide-react";
 import { ChicagoProperty } from "@/types";
+import { getStreetViewUrl, getSatelliteUrl } from "@/lib/streetview";
 import { useState } from "react";
 
 interface PropertyCardProps {
@@ -9,32 +10,50 @@ interface PropertyCardProps {
   userZip?: string;
 }
 
-const PROPERTY_IMAGES: Record<string, string[]> = {
-  abandoned_building: [
-    "https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=600&q=80",
-    "https://images.unsplash.com/photo-1582268611958-ebfd161ef9cf?w=600&q=80",
-    "https://images.unsplash.com/photo-1464146072230-91cabc968266?w=600&q=80",
-    "https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=600&q=80",
-  ],
-  vacant_lot: [
-    "https://images.unsplash.com/photo-1500382017468-9049fed747ef?w=600&q=80",
-    "https://images.unsplash.com/photo-1484154218962-a197022b5858?w=600&q=80",
-    "https://images.unsplash.com/photo-1581094480620-97a5d1f3c7d5?w=600&q=80",
-    "https://images.unsplash.com/photo-1416331108676-a22ccb276e35?w=600&q=80",
-  ],
-};
-
-function getPropertyImage(property: ChicagoProperty): string {
-  const images = PROPERTY_IMAGES[property.propertyType];
-  const seed = property.id.split("").reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  return images[seed % images.length];
+// Small source attribution logos shown at card bottom
+function SourceLogos() {
+  return (
+    <div className="flex items-center gap-1.5 mt-2 pt-2 border-t border-[#1a3a6e]/30">
+      <span className="text-zinc-600 text-[10px] mr-0.5">Data:</span>
+      {[
+        { initials: "CHI", bg: "#003087", title: "City of Chicago Open Data" },
+        { initials: "DPU", bg: "#1c4DA1", title: "DePaul Chaddick Institute" },
+        { initials: "UChi", bg: "#800000", title: "UChicago Crown Family School" },
+      ].map((src) => (
+        <span
+          key={src.initials}
+          title={src.title}
+          className="inline-flex items-center justify-center rounded-md text-white font-bold px-1.5 py-0.5 text-[9px] leading-none"
+          style={{ backgroundColor: src.bg }}
+        >
+          {src.initials}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 export default function PropertyCard({ property, onClick, userZip }: PropertyCardProps) {
   const [imgError, setImgError] = useState(false);
+  const [useSatellite, setUseSatellite] = useState(false);
+
   const isLocalUser = userZip && userZip === property.zip;
   const hasBid = !!property.currentBid;
-  const img = getPropertyImage(property);
+
+  const streetViewUrl = getStreetViewUrl(property.latitude, property.longitude, 600, 400);
+  const satelliteUrl = getSatelliteUrl(property.latitude, property.longitude, 600, 400);
+
+  function handleImgError() {
+    if (!useSatellite) {
+      // Street View failed — try satellite view
+      setUseSatellite(true);
+    } else {
+      // Both failed — show fallback icon
+      setImgError(true);
+    }
+  }
+
+  const imgSrc = imgError ? null : (useSatellite ? satelliteUrl : streetViewUrl);
 
   return (
     <div
@@ -43,13 +62,13 @@ export default function PropertyCard({ property, onClick, userZip }: PropertyCar
     >
       {/* Image */}
       <div className="relative h-48 bg-[#0a0e1a] overflow-hidden">
-        {!imgError ? (
+        {imgSrc ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={img}
+            src={imgSrc}
             alt={property.address}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-            onError={() => setImgError(true)}
+            onError={handleImgError}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
@@ -60,10 +79,19 @@ export default function PropertyCard({ property, onClick, userZip }: PropertyCar
           </div>
         )}
 
+        {/* Source label */}
+        {!imgError && (
+          <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm rounded-md px-1.5 py-0.5">
+            <span className="text-[10px] text-zinc-300 font-medium">
+              {useSatellite ? "📡 Satellite" : "📷 Street View"}
+            </span>
+          </div>
+        )}
+
         {/* Overlay gradient */}
         <div className="absolute inset-0 bg-gradient-to-t from-[#0f1629]/80 via-transparent to-transparent" />
 
-        {/* Badges */}
+        {/* Top badges */}
         <div className="absolute top-3 left-3 flex flex-col gap-1.5">
           <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ${
             property.propertyType === "abandoned_building"
@@ -98,9 +126,9 @@ export default function PropertyCard({ property, onClick, userZip }: PropertyCar
           </span>
         </div>
 
-        {/* Bottom: current bid overlay */}
+        {/* Current bid overlay */}
         {hasBid && (
-          <div className="absolute bottom-3 right-3 bg-[#003087]/90 backdrop-blur-sm px-2.5 py-1 rounded-lg border border-[#1a6eb5]/40">
+          <div className="absolute bottom-2 right-2 bg-[#003087]/90 backdrop-blur-sm px-2.5 py-1 rounded-lg border border-[#1a6eb5]/40">
             <p className="text-xs text-[#4a90d9] font-medium">Current Bid</p>
             <p className="text-white font-bold text-sm">${property.currentBid!.toLocaleString()}</p>
           </div>
@@ -109,7 +137,6 @@ export default function PropertyCard({ property, onClick, userZip }: PropertyCar
 
       {/* Content */}
       <div className="p-4">
-        {/* Address */}
         <div className="flex items-start gap-2 mb-3">
           <MapPin size={14} className="text-[#4a90d9] mt-0.5 shrink-0" />
           <div className="min-w-0">
@@ -118,7 +145,7 @@ export default function PropertyCard({ property, onClick, userZip }: PropertyCar
           </div>
         </div>
 
-        {/* Stats grid */}
+        {/* Stats */}
         <div className="grid grid-cols-2 gap-2 mb-3">
           <div className="bg-[#0a0e1a] rounded-xl p-2.5">
             <p className="text-zinc-500 text-xs">Min Bid</p>
@@ -142,8 +169,7 @@ export default function PropertyCard({ property, onClick, userZip }: PropertyCar
           )}
         </div>
 
-        {/* ROI indicator */}
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-1.5 text-emerald-400 text-xs font-medium">
             <TrendingUp size={13} />
             <span>
@@ -151,17 +177,19 @@ export default function PropertyCard({ property, onClick, userZip }: PropertyCar
             </span>
           </div>
           <div className="flex items-center gap-1 text-[#4a90d9] text-xs font-semibold group-hover:gap-2 transition-all">
-            <span>View Details</span>
+            <span>Details</span>
             <ChevronRight size={13} />
           </div>
         </div>
 
-        {/* Boarded indicator */}
         {property.isBoardedUp && (
           <div className="mt-2 px-2 py-1 bg-amber-900/20 border border-amber-700/30 rounded-lg text-xs text-amber-400">
             Board-Up Required
           </div>
         )}
+
+        {/* Data source attribution */}
+        <SourceLogos />
       </div>
 
       {/* Action buttons */}
@@ -175,9 +203,9 @@ export default function PropertyCard({ property, onClick, userZip }: PropertyCar
         </button>
         <button
           onClick={(e) => { e.stopPropagation(); onClick(property); }}
-          className="px-3 py-2.5 bg-[#0a0e1a] border border-[#1a3a6e]/40 hover:border-[#1a6eb5]/60 text-zinc-300 hover:text-white text-xs font-semibold rounded-xl transition-all"
+          className="px-3 py-2.5 bg-purple-900/30 border border-purple-700/40 hover:border-purple-500/60 text-purple-300 hover:text-white text-xs font-semibold rounded-xl transition-all"
         >
-          Reimagine
+          Remodel ✦
         </button>
       </div>
     </div>

@@ -1,11 +1,7 @@
 {
+  "name": "secondact-chicago",
   "framework": "nextjs",
   "buildCommand": "npm run build",
   "outputDirectory": ".next",
-  "devCommand": "npm run dev",
-  "installCommand": "npm install",
-  "env": {
-    "NEXT_PUBLIC_GOOGLE_MAPS_API_KEY": "@google-maps-api-key",
-    "GEMINI_API_KEY": "@gemini-api-key"
-  }
+  "installCommand": "npm install --legacy-peer-deps"
 }
