@@ -8,6 +8,7 @@ import PropertyCard from "@/components/PropertyCard";
 import PropertyMap from "@/components/PropertyMap";
 import PropertyDetail from "@/components/PropertyDetail";
 import DataSourceLogos from "@/components/DataSourceLogos";
+import LandBankSection from "@/components/LandBankSection";
 import {
   Building2, TreePine, MapPin, TrendingUp, Gavel,
   LayoutGrid, Map, Loader2, Star, RefreshCw,
@@ -413,6 +414,9 @@ function HomeContent() {
 
       {/* ── Tax Impact Slider ─────────────────────────────────────────────────── */}
       <TaxImpactSlider />
+
+      {/* ── Cook County Land Bank featured properties ─────────────────────────── */}
+      <LandBankSection />
 
       {/* ── Property Grid / Map ───────────────────────────────────────────────── */}
       <section id="properties" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
