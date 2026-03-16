@@ -39,25 +39,13 @@ export default function Header() {
             </div>
           </Link>
 
-          {/* Nav */}
+          {/* Nav — only links that actually work */}
           <nav className="hidden md:flex items-center gap-1">
             <button
               onClick={() => scrollTo("properties")}
               className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-2 rounded-lg hover:bg-white/5"
             >
-              Browse
-            </button>
-            <button
-              onClick={() => scrollTo("properties")}
-              className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-2 rounded-lg hover:bg-white/5"
-            >
-              Vacant Lots
-            </button>
-            <button
-              onClick={() => scrollTo("properties")}
-              className="text-sm text-zinc-400 hover:text-white transition-colors px-3 py-2 rounded-lg hover:bg-white/5"
-            >
-              Abandoned
+              Properties
             </button>
             <button
               onClick={() => scrollTo("how-it-works")}
@@ -67,7 +55,6 @@ export default function Header() {
             </button>
             <button
               onClick={() => {
-                // Find the CCLB section and scroll to it
                 const el = document.querySelector("[data-section='landbank']");
                 el?.scrollIntoView({ behavior: "smooth" });
               }}
@@ -90,13 +77,6 @@ export default function Header() {
               <MapPin size={11} />
               <span>Cook County, IL</span>
             </div>
-            <button
-              onClick={() => scrollTo("properties")}
-              className="text-white text-sm font-semibold px-4 py-2 rounded-full transition-all"
-              style={{ background: "linear-gradient(90deg, #003087 0%, #41B6E6 100%)" }}
-            >
-              Place a Bid
-            </button>
           </div>
 
         </div>
