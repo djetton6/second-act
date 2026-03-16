@@ -5,7 +5,6 @@ import {
   Download, Box, Map, Sofa, Info, ChevronRight, Camera,
 } from "lucide-react";
 import { ChicagoProperty } from "@/types";
-import { getStreetViewUrl, getSatelliteUrl } from "@/lib/streetview";
 
 interface ReimaginedViewProps {
   property: ChicagoProperty;
@@ -75,8 +74,13 @@ export default function ReimaginedView({ property }: ReimaginedViewProps) {
   const [streetViewLoaded, setStreetViewLoaded] = useState(false);
   const [streetViewFailed, setStreetViewFailed] = useState(false);
 
-  const streetViewUrl = getStreetViewUrl(property.latitude, property.longitude, 800, 500);
-  const satelliteUrl = getSatelliteUrl(property.latitude, property.longitude, 400, 260, 19);
+  const photoParams = new URLSearchParams({
+    address: `${property.address}, ${property.neighborhood}, Chicago, IL ${property.zip}`,
+    lat: String(property.latitude),
+    lng: String(property.longitude),
+  });
+  const streetViewUrl = `/api/photo?${photoParams}&mode=street`;
+  const satelliteUrl = `/api/photo?${photoParams}&mode=satellite`;
 
   async function generate(mode: ViewMode = viewMode) {
     setLoading(true);

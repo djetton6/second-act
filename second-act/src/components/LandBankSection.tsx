@@ -2,7 +2,15 @@
 import { useState } from "react";
 import { Download, MapPin, Building2, TreePine, ExternalLink, Camera } from "lucide-react";
 import { CCLBA_TOP_20, LandBankProperty } from "@/lib/landbank-data";
-import { getStreetViewUrlByAddress, getSatelliteUrl } from "@/lib/streetview";
+
+function photoUrl(property: LandBankProperty): string {
+  const params = new URLSearchParams({
+    address: property.fullAddress,
+    lat: String(property.latitude),
+    lng: String(property.longitude),
+  });
+  return `/api/photo?${params}`;
+}
 
 const TOLEMI_URL =
   "https://cook-county-land-bank-il-publicity.tolemi.com/#eyJzZWxlY3RlZEFzc2V0cyI6W10sIm1vZGFsS2V5IjpudWxsLCJwYXJjZWxTdHlsZSI6Im1peGVkIiwiYmFzZU1hcCI6ImRhcmstbGF5ZXIiLCJwYXJjZWxJZExhYmVscyI6dHJ1ZSwibWFwTGF0IjpudWxsLCJtYXBMbmciOm51bGwsIm1hcFpvb20iOm51bGwsImNvbHVtbnMiOlsicGlkIiwiYWRkcmVzcyIsImlkZW50aXR5X293bmVyIl0sImxpc3RTb3J0QnkiOm51bGwsImxpc3RTb3J0RGlyZWN0aW9uIjoiYXNjIiwieSI6InBjIiwieCI6bnVsbCwieiI6ImNpdHlfd2lkZSIsImZyb21EYXRlIjpudWxsLCJ0b0RhdGUiOm51bGwsInRpbWVGdW5jdGlvbiI6IiIsImF4aXNGdW5jdGlvbiI6IiIsInpBeGlzRnVuY3Rpb24iOiIiLCJzaG93VW5tYXBwZWRFdmVudHMiOmZhbHNlLCJhcHBWaWV3IjoibWFwIiwicGluc1NpZGVyQ29sbGFwc2VkIjp0cnVlLCJmaWx0ZXJzIjoie1wiaGVhdEF0dHJpYnV0ZVwiOlwiZmlsdGVyMjk3M1wifSIsInF1ZXJ5IjoiW10iLCJ2aXN1YWxpemVkTGF5ZXJzIjoiW10ifQ==";
@@ -13,23 +21,11 @@ interface LandBankCardProps {
 }
 
 function LandBankCard({ property, onClick }: LandBankCardProps) {
-  const [useSat, setUseSat] = useState(false);
   const [imgFailed, setImgFailed] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
-  // Try Street View by address first; on error fall back to lat/lng satellite (always succeeds)
-  const streetViewUrl = getStreetViewUrlByAddress(property.fullAddress, 600, 400);
-  const satelliteUrl = getSatelliteUrl(property.latitude, property.longitude, 600, 400, 18);
-  const imgSrc = imgFailed ? null : useSat ? satelliteUrl : streetViewUrl;
-
-  function handleError() {
-    if (!useSat) {
-      setUseSat(true);
-      setLoaded(false);
-    } else {
-      setImgFailed(true);
-    }
-  }
+  // Proxy route handles Street View → satellite fallback server-side
+  const imgSrc = imgFailed ? null : photoUrl(property);
 
   return (
     <div
@@ -46,7 +42,7 @@ function LandBankCard({ property, onClick }: LandBankCardProps) {
               alt={property.address}
               className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-500 ${loaded ? "opacity-100" : "opacity-0"}`}
               onLoad={() => setLoaded(true)}
-              onError={handleError}
+              onError={() => setImgFailed(true)}
             />
             {!loaded && (
               <div className="absolute inset-0 flex items-center justify-center">
@@ -80,9 +76,7 @@ function LandBankCard({ property, onClick }: LandBankCardProps) {
 
         {loaded && !imgFailed && (
           <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5">
-            <span className="text-[9px] text-zinc-300">
-              {useSat ? "🛰 Aerial" : "📷 Street View"}
-            </span>
+            <span className="text-[9px] text-zinc-300">📷 Google Maps</span>
           </div>
         )}
 

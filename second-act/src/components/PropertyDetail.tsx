@@ -6,7 +6,6 @@ import {
   HardHat, Landmark, ExternalLink, Wand2, ChevronLeft,
 } from "lucide-react";
 import { ChicagoProperty } from "@/types";
-import { getStreetViewUrl, getSatelliteUrl } from "@/lib/streetview";
 import ReimaginedView from "./ReimaginedView";
 import BidModal from "./BidModal";
 import ConstructionQuotes from "./ConstructionQuotes";
@@ -77,8 +76,13 @@ export default function PropertyDetail({ property, onClose }: PropertyDetailProp
     ((property.estimatedValue - (currentBid || property.minBid)) / property.estimatedValue) * 100
   );
 
-  const streetViewUrl = getStreetViewUrl(property.latitude, property.longitude, 800, 500);
-  const satelliteUrl = getSatelliteUrl(property.latitude, property.longitude, 600, 400, 19);
+  const photoParams = new URLSearchParams({
+    address: `${property.address}, ${property.neighborhood}, Chicago, IL ${property.zip}`,
+    lat: String(property.latitude),
+    lng: String(property.longitude),
+  });
+  const streetViewUrl = `/api/photo?${photoParams}&mode=street`;
+  const satelliteUrl = `/api/photo?${photoParams}&mode=satellite`;
 
   // ── Reimagine full-screen overlay ──────────────────────────────────────────
   if (showReimagine) {
