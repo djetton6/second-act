@@ -1,7 +1,6 @@
 "use client";
 import { MapPin, Building2, TreePine, Gavel, Star, AlertTriangle, ChevronRight, TrendingUp } from "lucide-react";
 import { ChicagoProperty } from "@/types";
-import { getStreetViewUrl, getSatelliteUrl } from "@/lib/streetview";
 import { useState } from "react";
 
 interface PropertyCardProps {
@@ -35,25 +34,16 @@ function SourceLogos() {
 
 export default function PropertyCard({ property, onClick, userZip }: PropertyCardProps) {
   const [imgError, setImgError] = useState(false);
-  const [useSatellite, setUseSatellite] = useState(false);
 
   const isLocalUser = userZip && userZip === property.zip;
   const hasBid = !!property.currentBid;
 
-  const streetViewUrl = getStreetViewUrl(property.latitude, property.longitude, 600, 400);
-  const satelliteUrl = getSatelliteUrl(property.latitude, property.longitude, 600, 400);
-
-  function handleImgError() {
-    if (!useSatellite) {
-      // Street View failed — try satellite view
-      setUseSatellite(true);
-    } else {
-      // Both failed — show fallback icon
-      setImgError(true);
-    }
-  }
-
-  const imgSrc = imgError ? null : (useSatellite ? satelliteUrl : streetViewUrl);
+  const imgParams = new URLSearchParams({
+    address: `${property.address}, Chicago, IL ${property.zip}`,
+    lat: String(property.latitude),
+    lng: String(property.longitude),
+  });
+  const imgSrc = imgError ? null : `/api/photo?${imgParams}`;
 
   return (
     <div
@@ -68,7 +58,7 @@ export default function PropertyCard({ property, onClick, userZip }: PropertyCar
             src={imgSrc}
             alt={property.address}
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-            onError={handleImgError}
+            onError={() => setImgError(true)}
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center">
@@ -82,9 +72,7 @@ export default function PropertyCard({ property, onClick, userZip }: PropertyCar
         {/* Source label */}
         {!imgError && (
           <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm rounded-md px-1.5 py-0.5">
-            <span className="text-[10px] text-zinc-300 font-medium">
-              {useSatellite ? "📡 Satellite" : "📷 Street View"}
-            </span>
+            <span className="text-[10px] text-zinc-300 font-medium">📷 Google Maps</span>
           </div>
         )}
 

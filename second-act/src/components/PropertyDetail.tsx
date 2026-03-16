@@ -6,7 +6,7 @@ import {
   HardHat, Landmark, ExternalLink, Wand2, ChevronLeft,
 } from "lucide-react";
 import { ChicagoProperty } from "@/types";
-import { getStreetViewUrl, getSatelliteUrl } from "@/lib/streetview";
+import StreetViewPhoto from "@/components/StreetViewPhoto";
 import ReimaginedView from "./ReimaginedView";
 import BidModal from "./BidModal";
 import ConstructionQuotes from "./ConstructionQuotes";
@@ -77,8 +77,13 @@ export default function PropertyDetail({ property, onClose }: PropertyDetailProp
     ((property.estimatedValue - (currentBid || property.minBid)) / property.estimatedValue) * 100
   );
 
-  const streetViewUrl = getStreetViewUrl(property.latitude, property.longitude, 800, 500);
-  const satelliteUrl = getSatelliteUrl(property.latitude, property.longitude, 600, 400, 19);
+  const photoParams = new URLSearchParams({
+    address: `${property.address}, ${property.neighborhood}, Chicago, IL ${property.zip}`,
+    lat: String(property.latitude),
+    lng: String(property.longitude),
+  });
+  const streetViewUrl = `/api/photo?${photoParams}&mode=street`;
+  const satelliteUrl = `/api/photo?${photoParams}&mode=satellite`;
 
   // ── Reimagine full-screen overlay ──────────────────────────────────────────
   if (showReimagine) {
@@ -122,52 +127,23 @@ export default function PropertyDetail({ property, onClose }: PropertyDetailProp
           <div className="relative rounded-t-2xl overflow-hidden">
             <div className="grid grid-cols-2 gap-0.5 bg-[#0a0e1a]" style={{ height: 240 }}>
 
-              {/* Photo 1 — Street View (ground-level) */}
+              {/* Photo 1 — Street View */}
               <div className="relative overflow-hidden">
-                {!svError ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={streetViewUrl}
-                    alt={`${property.address} street view`}
-                    className="w-full h-full object-cover"
-                    onError={() => setSvError(true)}
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-[#0a0e1a]">
-                    {property.propertyType === "abandoned_building"
-                      ? <Building2 size={40} className="text-[#1a3a6e]" />
-                      : <TreePine size={40} className="text-[#1a3a6e]" />}
-                  </div>
-                )}
-                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent h-16" />
-                <div className="absolute bottom-2 left-2">
-                  <span className="bg-black/70 backdrop-blur-sm text-zinc-300 text-[10px] font-medium px-1.5 py-0.5 rounded">
-                    📷 Street View
-                  </span>
-                </div>
+                <StreetViewPhoto
+                  lat={property.latitude}
+                  lng={property.longitude}
+                  propertyType={property.propertyType}
+                />
               </div>
 
               {/* Photo 2 — Satellite / aerial */}
               <div className="relative overflow-hidden">
-                {!satError ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={satelliteUrl}
-                    alt={`${property.address} aerial`}
-                    className="w-full h-full object-cover"
-                    onError={() => setSatError(true)}
-                  />
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center bg-[#0a0e1a]">
-                    <MapPin size={40} className="text-[#1a3a6e]" />
-                  </div>
-                )}
-                <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/60 to-transparent h-16" />
-                <div className="absolute bottom-2 left-2">
-                  <span className="bg-black/70 backdrop-blur-sm text-zinc-300 text-[10px] font-medium px-1.5 py-0.5 rounded">
-                    🛰 Aerial View
-                  </span>
-                </div>
+                <StreetViewPhoto
+                  lat={property.latitude}
+                  lng={property.longitude}
+                  propertyType={property.propertyType}
+                  mode="satellite"
+                />
               </div>
             </div>
 

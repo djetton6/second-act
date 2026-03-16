@@ -1,6 +1,46 @@
 const API_KEY = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "";
 
 /**
+ * Returns a Street View URL using an address string directly.
+ * More accurate than lat/lng for properties where we know the exact address.
+ */
+export function getStreetViewUrlByAddress(
+  address: string,
+  width = 800,
+  height = 500
+): string {
+  const params = new URLSearchParams({
+    size: `${width}x${height}`,
+    location: address,
+    fov: "90",
+    pitch: "5",
+    key: API_KEY,
+    return_error_codes: "true",
+    source: "outdoor",
+  });
+  return `https://maps.googleapis.com/maps/api/streetview?${params}`;
+}
+
+/**
+ * Returns a satellite image using an address string directly.
+ */
+export function getSatelliteUrlByAddress(
+  address: string,
+  width = 600,
+  height = 400,
+  zoom = 18
+): string {
+  const params = new URLSearchParams({
+    center: address,
+    zoom: String(zoom),
+    size: `${width}x${height}`,
+    maptype: "satellite",
+    key: API_KEY,
+  });
+  return `https://maps.googleapis.com/maps/api/staticmap?${params}`;
+}
+
+/**
  * Returns a Google Street View Static API image URL for a given lat/lng.
  * Shows the real current-state photo of the property location.
  */

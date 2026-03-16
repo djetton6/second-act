@@ -40,25 +40,34 @@ export default function PropertyMap({
       return;
     }
 
-    if (window.google && window.google.maps) {
+    // If Google Maps JS is already loaded, initialize immediately
+    if (window.google?.maps?.Map) {
       initializeMap();
       return;
     }
 
-    const script = document.createElement("script");
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=initMap`;
-    script.async = true;
-    script.defer = true;
-
-    window.initMap = () => {
-      setMapLoaded(true);
+    // Unique callback name to avoid conflicts across re-renders
+    const cbName = `__gm_${Date.now()}`;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any)[cbName] = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (window as any)[cbName];
       initializeMap();
     };
 
-    script.onerror = () => setMapError(true);
+    const script = document.createElement("script");
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${apiKey}&callback=${cbName}&loading=async`;
+    script.async = true;
+    script.onerror = () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (window as any)[cbName];
+      setMapError(true);
+    };
     document.head.appendChild(script);
 
     return () => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      delete (window as any)[cbName];
       if (script.parentNode) script.parentNode.removeChild(script);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
