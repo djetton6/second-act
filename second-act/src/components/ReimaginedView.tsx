@@ -5,6 +5,7 @@ import {
   Download, Box, Map, Sofa, Info, ChevronRight, Camera,
 } from "lucide-react";
 import { ChicagoProperty } from "@/types";
+import StreetViewPhoto from "@/components/StreetViewPhoto";
 
 interface ReimaginedViewProps {
   property: ChicagoProperty;
@@ -71,16 +72,6 @@ export default function ReimaginedView({ property }: ReimaginedViewProps) {
   const [result, setResult] = useState<GeneratedResult | null>(null);
   const [error, setError] = useState("");
   const [showDescription, setShowDescription] = useState(false);
-  const [streetViewLoaded, setStreetViewLoaded] = useState(false);
-  const [streetViewFailed, setStreetViewFailed] = useState(false);
-
-  const photoParams = new URLSearchParams({
-    address: `${property.address}, ${property.neighborhood}, Chicago, IL ${property.zip}`,
-    lat: String(property.latitude),
-    lng: String(property.longitude),
-  });
-  const streetViewUrl = `/api/photo?${photoParams}&mode=street`;
-  const satelliteUrl = `/api/photo?${photoParams}&mode=satellite`;
 
   async function generate(mode: ViewMode = viewMode) {
     setLoading(true);
@@ -146,47 +137,24 @@ export default function ReimaginedView({ property }: ReimaginedViewProps) {
   // ── Before — Street View hero ────────────────────────────────────────────────
   const streetViewHero = (
     <div className="relative rounded-2xl overflow-hidden border border-[#1a3a6e]/40 bg-[#0a0e1a] mb-4">
-      {/* Full-width Street View */}
+      {/* Full-width Street View via Maps JS API */}
       <div className="relative aspect-[16/9]">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img
-          src={streetViewUrl}
-          alt={`Street View of ${property.address}`}
-          className={`w-full h-full object-cover transition-opacity duration-500 ${streetViewLoaded ? "opacity-100" : "opacity-0"}`}
-          onLoad={() => setStreetViewLoaded(true)}
-          onError={() => setStreetViewFailed(true)}
+        <StreetViewPhoto
+          lat={property.latitude}
+          lng={property.longitude}
+          propertyType={property.propertyType}
+          interactive
         />
-        {!streetViewLoaded && !streetViewFailed && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#0a0e1a]">
-            <div className="flex flex-col items-center gap-2">
-              <Loader2 size={20} className="animate-spin text-[#41B6E6]" />
-              <span className="text-zinc-500 text-xs">Loading Street View…</span>
-            </div>
-          </div>
-        )}
-        {streetViewFailed && (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#0a0e1a]">
-            <div className="flex flex-col items-center gap-2 text-center px-6">
-              <Camera size={24} className="text-zinc-600" />
-              <span className="text-zinc-500 text-xs">No Street View imagery for this location</span>
-            </div>
-          </div>
-        )}
 
         {/* BEFORE label */}
-        <div className="absolute top-3 left-3 flex items-center gap-2">
+        <div className="absolute top-3 left-3 z-10 pointer-events-none">
           <span className="bg-black/70 backdrop-blur-sm text-white text-xs font-black px-2.5 py-1 rounded-lg tracking-wider">
             BEFORE
           </span>
-          {streetViewLoaded && (
-            <span className="bg-black/60 backdrop-blur-sm text-zinc-300 text-[10px] font-medium px-2 py-1 rounded-lg flex items-center gap-1">
-              <Camera size={10} /> Google Street View
-            </span>
-          )}
         </div>
 
         {/* Address overlay */}
-        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-3">
+        <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-3 py-3 z-10 pointer-events-none">
           <p className="text-white font-bold text-sm">{property.address}</p>
           <p className="text-zinc-400 text-xs">{property.neighborhood}, Chicago, IL {property.zip}</p>
         </div>
@@ -195,17 +163,12 @@ export default function ReimaginedView({ property }: ReimaginedViewProps) {
       {/* Satellite strip + Gemini notice */}
       <div className="grid grid-cols-3 border-t border-[#1a3a6e]/30">
         {/* Satellite thumb */}
-        <div className="relative col-span-1 border-r border-[#1a3a6e]/30">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={satelliteUrl}
-            alt="Satellite view"
-            className="w-full h-20 object-cover"
-            onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
+        <div className="relative col-span-1 border-r border-[#1a3a6e]/30 h-20">
+          <StreetViewPhoto
+            lat={property.latitude}
+            lng={property.longitude}
+            mode="satellite"
           />
-          <div className="absolute bottom-1 left-1 bg-black/70 rounded px-1.5 py-0.5 text-[9px] text-zinc-300">
-            🛰 Aerial
-          </div>
         </div>
 
         {/* Gemini vision notice */}

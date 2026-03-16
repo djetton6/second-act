@@ -1,16 +1,8 @@
 "use client";
 import { useState } from "react";
-import { Download, MapPin, Building2, TreePine, ExternalLink, Camera } from "lucide-react";
+import { Download, MapPin, ExternalLink } from "lucide-react";
 import { CCLBA_TOP_20, LandBankProperty } from "@/lib/landbank-data";
-
-function photoUrl(property: LandBankProperty): string {
-  const params = new URLSearchParams({
-    address: property.fullAddress,
-    lat: String(property.latitude),
-    lng: String(property.longitude),
-  });
-  return `/api/photo?${params}`;
-}
+import StreetViewPhoto from "@/components/StreetViewPhoto";
 
 const TOLEMI_URL =
   "https://cook-county-land-bank-il-publicity.tolemi.com/#eyJzZWxlY3RlZEFzc2V0cyI6W10sIm1vZGFsS2V5IjpudWxsLCJwYXJjZWxTdHlsZSI6Im1peGVkIiwiYmFzZU1hcCI6ImRhcmstbGF5ZXIiLCJwYXJjZWxJZExhYmVscyI6dHJ1ZSwibWFwTGF0IjpudWxsLCJtYXBMbmciOm51bGwsIm1hcFpvb20iOm51bGwsImNvbHVtbnMiOlsicGlkIiwiYWRkcmVzcyIsImlkZW50aXR5X293bmVyIl0sImxpc3RTb3J0QnkiOm51bGwsImxpc3RTb3J0RGlyZWN0aW9uIjoiYXNjIiwieSI6InBjIiwieCI6bnVsbCwieiI6ImNpdHlfd2lkZSIsImZyb21EYXRlIjpudWxsLCJ0b0RhdGUiOm51bGwsInRpbWVGdW5jdGlvbiI6IiIsImF4aXNGdW5jdGlvbiI6IiIsInpBeGlzRnVuY3Rpb24iOiIiLCJzaG93VW5tYXBwZWRFdmVudHMiOmZhbHNlLCJhcHBWaWV3IjoibWFwIiwicGluc1NpZGVyQ29sbGFwc2VkIjp0cnVlLCJmaWx0ZXJzIjoie1wiaGVhdEF0dHJpYnV0ZVwiOlwiZmlsdGVyMjk3M1wifSIsInF1ZXJ5IjoiW10iLCJ2aXN1YWxpemVkTGF5ZXJzIjoiW10ifQ==";
@@ -21,47 +13,22 @@ interface LandBankCardProps {
 }
 
 function LandBankCard({ property, onClick }: LandBankCardProps) {
-  const [imgFailed, setImgFailed] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-
-  // Proxy route handles Street View → satellite fallback server-side
-  const imgSrc = imgFailed ? null : photoUrl(property);
-
   return (
     <div
       className="group bg-[#0a0e1a] border border-[#1a3a6e]/40 rounded-2xl overflow-hidden cursor-pointer hover:border-[#41B6E6]/40 hover:shadow-2xl hover:shadow-blue-900/20 transition-all duration-300 hover:-translate-y-0.5"
       onClick={() => onClick(property)}
     >
-      {/* Image */}
+      {/* Image — Maps JS API Street View or satellite */}
       <div className="relative h-44 bg-[#060914] overflow-hidden">
-        {imgSrc ? (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={imgSrc}
-              alt={property.address}
-              className={`w-full h-full object-cover group-hover:scale-105 transition-all duration-500 ${loaded ? "opacity-100" : "opacity-0"}`}
-              onLoad={() => setLoaded(true)}
-              onError={() => setImgFailed(true)}
-            />
-            {!loaded && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <Camera size={20} className="text-[#1a3a6e] animate-pulse" />
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="w-full h-full flex flex-col items-center justify-center gap-2">
-            {property.propertyType === "abandoned_building"
-              ? <Building2 size={36} className="text-[#1a3a6e]" />
-              : <TreePine size={36} className="text-[#1a3a6e]" />}
-            <span className="text-zinc-700 text-xs">No imagery</span>
-          </div>
-        )}
+        <StreetViewPhoto
+          lat={property.latitude}
+          lng={property.longitude}
+          propertyType={property.propertyType}
+        />
 
-        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0e1a]/90 via-transparent to-transparent" />
+        <div className="absolute inset-0 bg-gradient-to-t from-[#0a0e1a]/90 via-transparent to-transparent pointer-events-none" />
 
-        <div className="absolute top-2.5 left-2.5 flex flex-col gap-1">
+        <div className="absolute top-2.5 left-2.5 flex flex-col gap-1 pointer-events-none z-10">
           <span className="bg-[#CC0000]/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
             🏦 CCLB
           </span>
@@ -73,12 +40,6 @@ function LandBankCard({ property, onClick }: LandBankCardProps) {
             {property.propertyType === "abandoned_building" ? "Abandoned" : "Vacant Lot"}
           </span>
         </div>
-
-        {loaded && !imgFailed && (
-          <div className="absolute bottom-2 left-2 bg-black/60 backdrop-blur-sm rounded px-1.5 py-0.5">
-            <span className="text-[9px] text-zinc-300">📷 Google Maps</span>
-          </div>
-        )}
 
         {/* Reimagine hint on hover */}
         <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity duration-200">
